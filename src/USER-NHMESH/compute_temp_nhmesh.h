@@ -25,3 +25,41 @@
 //    + vector: vector of length n_thermostats with temperature of each
 //    + array:  n_thermostats x 6 array of KE tensors. Summing these would give
 //              the KE tensor of the entire group.
+
+#ifdef COMPUTE_CLASS
+
+ComputeStyle(temp,ComputeTemp)
+
+#else
+
+#ifndef LMP_COMPUTE_TEMP_NHMESH_H
+#define LMP_COMPUTE_TEMP_NHMESH_H
+
+#include "compute.h"
+
+namespace LAMMPS_NS {
+
+class ComputeTempNHMesh : public Compute {
+ public:
+  ComputeTempNHMesh(class LAMMPS *, int, char **);
+  virtual ~ComputeTempNHMesh();
+  void init() {}
+  void setup();
+  virtual double compute_scalar();
+  virtual void compute_vector();
+
+ protected:
+  double tfactor;
+
+  virtual void dof_compute();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+
+*/
