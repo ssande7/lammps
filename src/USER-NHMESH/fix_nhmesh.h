@@ -11,17 +11,45 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-// TODO:
-// * strip out barostat
-// * change thermostat implementation
-// * add thermostat-thermostat coupling + input handling for it
+/* -------------------------------------------------------------------------
+TODO:
+ * strip out barostat
+ * change thermostat implementation
+ * create compute for temperature in class constructor
+ * add thermostat-thermostat coupling + input handling for it
+ * handle velocity bias for SLLOD etc.
+ * add conserve flag to enable/disable rebalancing of the partitle coupling
+   matrix such that the DoFs controlled by each thermostat remains constant
+------------------------------------------------------------------------- */
 
-// NOTE:
-// * fix_npt inherits FixNH directly, so no need to worry about things done for
-//   that
-// * temperature of each thermostat comes from compute_temp_nhmesh
-// * R matrix (for particle-thermostat couplings) from compute_partition_nhmesh
-//   or compute_part_balance_nhmesh
+/* -------------------------------------------------------------------------
+NOTE:
+ * fix_npt inherits FixNH directly, so no need to worry about things done for
+   that
+ * temperature of each thermostat comes from compute_temp_nhmesh
+ * R matrix (for particle-thermostat couplings) from compute_coupling_nhmesh
+ * Needs to perform time integration like fix_nh for proper thermostat
+   "particle" dynamics
+------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------
+INPUT:
+fix fix-ID grp-ID temp/nhmesh N [t_start] [t_stop] [t_period] c_couple kwargs
+  * N            = Number of thermostats
+  * [t_start]    = vector of initial temperatures of length N
+  * [t_stop]     = vector of final temperatures of length N
+  * [t_period]   = vector of coupling time periods of length N
+  * c_couple     = compute that returns the coupling matrix mapping
+                   particles to thermostats.
+  * kwargs (optional):
+     + couple args:
+        args     = N vectors of coupling coefficients, corresponding to
+                   rows of the thermostat-thermostat coupling matrix (ie.
+                   degree to which each thermostat controls each other
+                   thermostat)
+     + conserve arg:
+        arg      = on or off (default on)
+------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
 

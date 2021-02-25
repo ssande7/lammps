@@ -10,3 +10,18 @@
 
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
+
+// TODO:
+// * compute class to return kinetic temperature relevant to each thermostat
+// * dof_compute function for DoFs per atom (stored in dof). Thermostat fix then
+//   multiplies this by the sum of each row of the coupling matrix to get atom
+//   DoFs per thermostat.
+// * add protected variable to store total DoFs for scalar output
+
+// NOTE:
+// * takes compute_coupling_nhmesh or compute_coupling_conserve_nhmesh as input
+// * returns:
+//    + scalar: average kinetic temperature
+//    + vector: vector of length n_thermostats with temperature of each
+//    + array:  n_thermostats x 6 array of KE tensors. Summing these would give
+//              the KE tensor of the entire group.
