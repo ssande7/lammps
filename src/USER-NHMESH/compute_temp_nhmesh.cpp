@@ -19,6 +19,8 @@
 #include "domain.h"
 #include "group.h"
 #include "error.h"
+#include "memory.h"
+#include "modify.h"
 
 using namespace LAMMPS_NS;
 
@@ -27,23 +29,48 @@ using namespace LAMMPS_NS;
 ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg)
 {
-  if (narg != 3) error->all(FLERR,"Illegal compute temp command");
+  if (narg != 5) error->all(FLERR,"Illegal compute temp/nhmesh command");
 
-  scalar_flag = vector_flag = 1;
+  n_thermostats = utils::numeric(FLERR,arg[3],false,lmp);
+  if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
+
+  idcoupling = utils::strdup(arg[4]);
+
+  scalar_flag = vector_flag = array_flag = 1;
   size_vector = 6;
+  size_array_cols = n_thermostats;
+  size_array_rows = 6;
+  size_array_rows_variable = 1;
   extscalar = 0;
   extvector = 1;
+  extarray = 1;
   tempflag = 1;
 
   vector = new double[size_vector];
+  memory->create(array,size_array_rows,size_array_cols,"temp/nhmesh:array");
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeTempNHMesh::~ComputeTempNHMesh()
 {
-  if (!copymode)
+  if (!copymode) {
     delete [] vector;
+    delete [] idcoupling;
+    memory->destroy(array);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeTempNHMesh::init()
+{
+  // get pointer to coupling compute
+
+  int icoupling = modify->find_compute(idcoupling);
+  if (icoupling == -1)
+    error->all(FLERR,"Compute ID for temp/nhmesh does not exist");
+  coupling = modify->compute[icoupling];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -82,6 +109,7 @@ double ComputeTempNHMesh::compute_scalar()
 
   double t = 0.0;
 
+  // assumes sum of couplings for each atom is 1
   if (rmass) {
     for (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit)
@@ -119,6 +147,7 @@ void ComputeTempNHMesh::compute_vector()
   double massone,t[6];
   for (i = 0; i < 6; i++) t[i] = 0.0;
 
+  // assumes sum of couplings for each atom is 1
   for (i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       if (rmass) massone = rmass[i];
@@ -133,4 +162,47 @@ void ComputeTempNHMesh::compute_vector()
 
   MPI_Allreduce(t,vector,6,MPI_DOUBLE,MPI_SUM,world);
   for (i = 0; i < 6; i++) vector[i] *= force->mvv2e;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeTempNHMesh::compute_array()
+{
+  int i, j;
+
+  invoked_vector = update->ntimestep;
+
+  // TODO: check that this only recalculates once per time step
+  coupling->compute_peratom();
+  double **&couple_mat = coupling->array_atom;
+
+  double **v = atom->v;
+  double *mass = atom->mass;
+  double *rmass = atom->rmass;
+  int *type = atom->type;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  double massone,t[n_thermostats*6];
+  for (j = 0; j < n_thermostats; j++)
+    for (i = 0; i < 6; i++) t[j*6+i] = 0.0;
+
+  for (i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      if (rmass) massone = rmass[i];
+      else massone = mass[type[i]];
+      for (j = 0; j < n_thermostats; j++) {
+        t[j*6+0] += couple_mat[i][j] * massone * v[i][0]*v[i][0];
+        t[j*6+1] += couple_mat[i][j] * massone * v[i][1]*v[i][1];
+        t[j*6+2] += couple_mat[i][j] * massone * v[i][2]*v[i][2];
+        t[j*6+3] += couple_mat[i][j] * massone * v[i][0]*v[i][1];
+        t[j*6+4] += couple_mat[i][j] * massone * v[i][0]*v[i][2];
+        t[j*6+5] += couple_mat[i][j] * massone * v[i][1]*v[i][2];
+      }
+    }
+
+  // array[i] = &data[i*n2], n2 = 6, so this reduces the whole array in one call
+  MPI_Allreduce(t,array[0],6*n_thermostats,MPI_DOUBLE,MPI_SUM,world);
+  for (j = 0; j < n_thermostats; j++)
+    for (i = 0; i < 6; i++) array[j][i] *= force->mvv2e;
 }

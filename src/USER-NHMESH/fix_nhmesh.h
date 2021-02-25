@@ -18,8 +18,7 @@ TODO:
  * create compute for temperature in class constructor
  * add thermostat-thermostat coupling + input handling for it
  * handle velocity bias for SLLOD etc.
- * add conserve flag to enable/disable rebalancing of the partitle coupling
-   matrix such that the DoFs controlled by each thermostat remains constant
+ * conservation of row sums in coupling matrix handled by conserve compute
 ------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------
