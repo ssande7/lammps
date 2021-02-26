@@ -10,3 +10,257 @@
 
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
+
+#include "compute_coupling_nhmesh_atom.h"
+
+#include "atom.h"
+#include "update.h"
+#include "force.h"
+#include "domain.h"
+#include "group.h"
+#include "error.h"
+#include "memory.h"
+#include "modify.h"
+#include "region.h"
+#include "input.h"
+#include "variable.h"
+#include "math_const.h"
+
+using namespace LAMMPS_NS;
+
+/* ---------------------------------------------------------------------- */
+
+ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
+  : Compute(lmp, narg, arg), coupling(nullptr)
+{
+  if (narg < 5) error->all(FLERR,"Illegal compute nhmesh/coupling command");
+
+  n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
+  if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
+
+  int i;
+  if (strcmp(arg[4], "grid") == 0) {
+    heuristic = GRID;
+    if (narg < 14) error->all(FLERR,"Illegal compute nhmesh/coupling command");
+    for (i = 0; i < 3; i++) {
+      grid_lo[i] = utils::numeric(FLERR,arg[5+2*i],false,lmp);
+      grid_hi[i] = utils::numeric(FLERR,arg[6+2*i],false,lmp);
+      if (grid_lo[i] > grid_hi[i])
+        error->all(FLERR,"Illegal grid boundaries for nhmesh/coupling");
+    }
+    int n_check = 1;
+    for (i=0; i<3; i++) {
+      grid_n[i] = utils::inumeric(FLERR,arg[11+i],false,lmp);
+      n_check *= grid_n[i];
+    }
+    if (n_thermostats != n_check)
+      error->all(FLERR,"Illegal grid dimensions for nhmesh/coupling - "
+                       "nx*ny*nz must equal N");
+    if (narg > 14) {
+      if (narg != 17)
+        error->all(FLERR,"Illegal compute nhmesh/coupling command");
+      for (i=0; i<3; i++) {
+        grid_decay[i] = utils::numeric(FLERR,arg[14+i],false,lmp);
+        if (grid_decay[i] <= 0 || grid_decay[i] > grid_n[i])
+          error->all(FLERR,"Illegal grid decay length for nhmesh/coupling");
+      }
+    }
+    memory->create(grid_idtherm,n_thermostats,3,"nhmesh/coupling:grid_idtherm");
+  } else if (strcmp(arg[4], "points") == 0) {
+    heuristic = POINTS;
+    memory->create(points,n_thermostats-1,4,"nhmesh/coupling:points");
+    memory->create(points_str,n_thermostats-1,"nhmesh/coupling:points_str");
+    memory->create(points_varflag,n_thermostats-1,
+        "nhmesh/coupling:points_varflag");
+    points_anyvar = false;
+    int iarg = 5;
+    int j,ivar;
+    for (i=0; i<n_thermostats-1; i++) {
+      ivar = input->variable->find(arg[iarg]);
+      points_varflag[i] = ivar >= 0;
+      if (points_varflag[i]) {
+        points_anyvar = true;
+        if (!input->variable->vectorstyle(ivar))
+          error->all(FLERR,
+              "Compute nhmesh/coupling points variables must be vector style");
+        points_str[i] = utils::strdup(arg[iarg]);
+      } else {
+        if (narg < iarg+4)
+          error->all(FLERR,"Illegal compute nhmesh/coupling command");
+        for (j=0; j<4; j++)
+          points[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+        points_str[i] = nullptr;
+      }
+    }
+    if (narg < iarg+1)
+      error->all(FLERR,"Illegal compute nhmesh/coupling command");
+    if (strcmp(arg[iarg],"linear")==0) points_decay = LINEAR;
+    else if (strcmp(arg[iarg],"gaussian")==0) points_decay = GAUSSIAN;
+    else if (strcmp(arg[iarg],"exp")==0) points_decay = EXP;
+    else error->all(FLERR,"Illegal compute nhmesh/coupling command");
+  } else error->all(FLERR,"Unknown nhmesh/coupling heuristic");
+
+  peratom_flag = 1;
+  size_peratom_cols = n_thermostats;
+
+  nmax = 0;
+  memory->create(therm_sum, n_thermostats, "nhmesh/coupling:therm_sum");
+}
+
+/* ---------------------------------------------------------------------- */
+
+ComputeCouplingNHMesh::~ComputeCouplingNHMesh()
+{
+  if (!copymode) {
+    memory->destroy(coupling);
+    memory->destroy(therm_sum);
+
+    if (heuristic == GRID) {
+      memory->destroy(grid_idtherm);
+    } else if (heuristic == POINTS) {
+      memory->destroy(points);
+      memory->destroy(points_str);
+      memory->destroy(points_varflag);
+    }
+    memory->destroy(array_atom);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeCouplingNHMesh::init() {}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeCouplingNHMesh::setup()
+{
+  dynamic = 0;
+  if (dynamic_user || group->dynamic[igroup]) dynamic = 1;
+  update_heuristics();
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeCouplingNHMesh::update_heuristics() {
+  switch (heuristic) {
+    case POINTS:
+      if (points_anyvar) {
+        double *pt_var;
+        int ivar, vlen;
+        for (int i=0; i<n_thermostats-1; i++)
+          if (points_varflag[i]) {
+            ivar = input->variable->find(points_str[i]);
+            vlen = input->variable->compute_vector(ivar, &pt_var);
+            if (vlen<4)
+              error->all(FLERR, "Compute nhmesh/coupling point variables must "
+                                "return a vector of length 4");
+            for (int j=0; j<4; j++) points[i][j]=pt_var[j];
+          }
+      }
+      break;
+    case GRID:
+      for (int i = 0; i < 3; i++)
+        grid_dlength[i] = grid_decay[i]*(grid_hi[i]-grid_lo[i])/(grid_n[i]-1);
+      for (int j = 0; j < n_thermostats; j++) {
+        grid_idtherm[j][0] = j / (grid_n[1]*grid_n[2]);
+        grid_idtherm[j][1] = (j - grid_idtherm[j][0]*grid_n[1]*grid_n[2]) / grid_n[2];
+        grid_idtherm[j][2] = j - grid_idtherm[j][0]*grid_n[1]*grid_n[2] -
+                             grid_idtherm[j][1]*grid_n[2];
+      }
+      break;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
+  static const double r2pi = sqrt(2*MathConst::MY_PI);
+  switch (heuristic) {
+    case POINTS:
+      {
+        if (j == n_thermostats-1) return 0;
+        double p_closest[3];
+        for (int i = 0; i < 3; i++) p_closest[i] = points[j][i];
+        domain->remap_near(p_closest, x);
+        double r2,dx,dy,dz;
+        dx = fabs(x[0]-p_closest[0]);
+        dy = fabs(x[1]-p_closest[1]);
+        dz = fabs(x[2]-p_closest[2]);
+        r2 = dx*dx + dy*dy + dz*dz;
+
+        switch (points_decay) {
+          case LINEAR:
+            return (r2 < points[j][3]*points[j][3])
+              ? 1-sqrt(r2)/points[j][3]
+              : 0.0;
+          case GAUSSIAN:
+            return 1/(points[j][3]*r2pi)*exp(-r2/(2*points[j][3]*points[j][3]));
+          case EXP:
+            return exp(-points[j][3]*sqrt(r2));
+        }
+      }
+      break;
+    case GRID:
+      {
+        int i;
+        double pi[3], dx;
+        for (i = 0; i < 3; i++) {
+          if (grid_decay[i] != grid_n[i])
+            pi[i] = grid_lo[i] + grid_idtherm[j][i] * (grid_hi[i] - grid_lo[i]);
+          else pi[i] = x[i];
+        }
+        domain->remap_near(pi, x);
+        double wt = 1.0;
+        for (i = 0; i < 3; i++) {
+          dx = fabs(x[i] - pi[i]);
+          if (dx > grid_dlength[i]) return 0.0;
+          else wt *= 1.0 - dx/grid_dlength[i];
+        }
+        return wt;
+      }
+      break;
+  }
+  return 0.0;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeCouplingNHMesh::compute_peratom()
+{
+  // grow coupling array if needed
+
+  if (atom->nmax > nmax) {
+    memory->destroy(coupling);
+    nmax = atom->nmax;
+    memory->create(coupling,nmax,n_thermostats,"nhmesh/coupling:atom");
+    array_atom = coupling;
+  }
+
+  int i, j;
+
+  invoked_peratom = update->ntimestep;
+
+  int *mask = atom->mask;
+  double **x = atom->x;
+  int nlocal = atom->nlocal;
+  double wt_sum;
+  double local_sum[n_thermostats];
+  for (j = 0; j < n_thermostats; j++) local_sum[j] = 0;
+
+  for (i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      wt_sum = 0;
+      for (j = 0; j < n_thermostats; j++) {
+        coupling[i][j] = calc_weight(x[i], j);
+        wt_sum += coupling[i][j];
+      }
+      if (wt_sum > 1) {
+        for (j = 0; j < n_thermostats; j++) coupling[i][j] /= wt_sum;
+      } else if (heuristic==POINTS && wt_sum < 1) {
+        coupling[i][n_thermostats-1] = 1.0-wt_sum;
+      }
+      for (j = 0; j < n_thermostats; j++) local_sum[j] += coupling[i][j];
+    } else for (j = 0; j < n_thermostats; j++) coupling[i][j] = 0.0;
+  // Calculating sum for each thermostat here to save an extra loop over atoms
+  MPI_Allreduce(local_sum,therm_sum,n_thermostats,MPI_DOUBLE,MPI_SUM,world);
+}
