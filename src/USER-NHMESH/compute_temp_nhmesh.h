@@ -81,6 +81,10 @@ E: Compute ID for temp/nhmesh does not exist
 Self-explanatory.  temp/nhmesh requires a compute that provides
 particle-thermostat couplings
 
+E: Compute doesn't output the correct array size for temp/nhmesh
+
+Self-explanatory.
+
 E: Temperature compute degrees of freedom < 0
 
 Self-explanatory.

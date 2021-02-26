@@ -31,7 +31,7 @@ ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg != 5) error->all(FLERR,"Illegal compute temp/nhmesh command");
 
-  n_thermostats = utils::numeric(FLERR,arg[3],false,lmp);
+  n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
   if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
 
   idcoupling = utils::strdup(arg[4]);
@@ -71,6 +71,9 @@ void ComputeTempNHMesh::init()
   if (icoupling == -1)
     error->all(FLERR,"Compute ID for temp/nhmesh does not exist");
   coupling = modify->compute[icoupling];
+  if (coupling->size_peratom_cols != n_thermostats)
+    error->all(FLERR,
+        "Compute doesn't output the correct array size for temp/nhmesh");
 }
 
 /* ---------------------------------------------------------------------- */
