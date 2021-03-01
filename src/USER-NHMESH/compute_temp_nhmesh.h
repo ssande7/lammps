@@ -16,7 +16,8 @@
 // * dof_compute function for DoFs per atom (stored in dof). Thermostat fix then
 //   multiplies this by the sum of each row of the coupling matrix to get atom
 //   DoFs per thermostat.
-// * add protected variable to store total DoFs for scalar output
+// * add protected variable to store total DoFs for scalar output??
+// * add memory_usage() function
 
 // NOTE:
 // * takes compute_coupling_nhmesh or compute_coupling_conserve_nhmesh as input

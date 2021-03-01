@@ -12,10 +12,12 @@
 ------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------
-TODO:
+INFO:
  * compute class to give fraction of influence of each thermostat on each
    atom
  * can use grid or point-based heuristics, with potential to plug in others
+TODO:
+ * give correct return from memory_usage()
 ------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------
