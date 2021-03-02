@@ -98,8 +98,7 @@ class ComputeCouplingNHMesh : public Compute {
   virtual void update_heuristics();
   virtual double calc_weight(double *, int&);
 
-  // TODO: use dynamic_cast<ComputeCouplingNHMesh *> in fix to access therm_sum
-  //       returns nullptr if fail
+  // FixNHMesh needs access to therm_sum for efficiency reasons
   friend class FixNHMesh;
 };
 

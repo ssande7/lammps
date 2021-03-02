@@ -11,33 +11,23 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-// TODO: are all of these needed?
 #include "fix_nhmesh.h"
-#include <cstring>
-#include <cmath>
 #include "atom.h"
 #include "force.h"
 #include "group.h"
 #include "comm.h"
 #include "neighbor.h"
-#include "irregular.h"
 #include "modify.h"
-#include "fix_deform.h"
 #include "compute.h"
-#include "kspace.h"
 #include "update.h"
 #include "respa.h"
 #include "domain.h"
 #include "memory.h"
 #include "error.h"
+#include "compute_coupling_nhmesh_atom.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
-
-// TODO: Are these needed?
-#define DELTAFLIP 0.1
-#define TILTMAX 1.5
-#define EPSILON 1.0e-6
 
 enum{NOBIAS,BIAS};
 
@@ -48,26 +38,28 @@ enum{NOBIAS,BIAS};
 
 FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg), id_temp(nullptr), eta(nullptr), eta_dot(nullptr),
-  eta_dotdot(nullptr), eta_mass(nullptr)
+  eta_dotdot(nullptr), eta_mass(nullptr), t_start(nullptr), t_stop(nullptr),
+  t_freq(nullptr), t_current(nullptr), t_target(nullptr), ke_current(nullptr),
+  ke_target(nullptr)
 {
-  if (narg < 4) error->all(FLERR,"Illegal fix nvt/npt/nph command");
+  if (narg < 4) error->all(FLERR,"Illegal fix temp/nhmesh command");
 
   restart_global = 1;
   dynamic_group_allow = 1;
   time_integrate = 1;
   scalar_flag = 1;
   vector_flag = 1;
-  global_freq = 1; // TODO: should this be set?
+  global_freq = 1;
   extscalar = 1;
   extvector = 0;
   ecouple_flag = 1;
 
   // default values
 
-  drag = 0.0;
-  mtchain = 3;
+  //drag = 0.0;
   nc_tchain = 1;
   eta_mass_flag = 1;
+  mesh_coupling_flag = 0;
 
   tcomputeflag = 0;
   id_temp = nullptr;
@@ -75,67 +67,103 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
 
   // used by FixNVTSllod to preserve non-default value
 
-  mtchain_default_flag = 1;
+  // mtchain_default_flag = 1;
 
-  double t_period = 0.0;
+  id_coupling = utils::strdup(arg[3]);
+  int icoupling = modify->find_compute(id_coupling);
+  if (icoupling < 0)
+    error->all(FLERR,"Coupling ID of fix temp/nhmesh doesn't exist");
+  coupling = dynamic_cast<ComputeCouplingNHMesh*>(modify->compute[icoupling]);
+  if (coupling == nullptr)
+    error->all(FLERR,"Invalid coupling compute for temp/nhmesh");
 
-  n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
+  n_thermostats = coupling->n_thermostats;
   if (n_thermostats <= 0)
     error->all(FLERR,"Number of thermostats for temp/nhmesh must be > 0");
+
+  int iarg = 4, i;
+
+  if (iarg+3*n_thermostats >= narg)
+    error->all(FLERR,"Illegal fix temp/nhmesh command");
+
+  double t_period[n_thermostats];
+  t_start = new double[n_thermostats];
+  t_stop = new double[n_thermostats];
+  t_freq = new double[n_thermostats];
+  t_current = new double[n_thermostats];
+  t_target = new double[n_thermostats];
+  ke_current = new double[n_thermostats];
+  ke_target = new double[n_thermostats];
+  mesh_dof = new double[n_thermostats];
+  for (i = 0; i < n_thermostats; i++) mesh_dof[i] = 0.0;
+
+  // TODO: accept vectors here
+  for (i = 0; i < n_thermostats; i++) {
+    t_start[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+    t_target[i] = t_start[i];
+  }
+  for (i = 0; i < n_thermostats; i++) {
+    t_stop[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+    if (t_start[i] <= 0.0 || t_stop[i] <= 0.0)
+      error->all(FLERR,
+                 "Target temperature for fix temp/nhmesh cannot be 0.0");
+  }
+  for (i = 0; i < n_thermostats; i++)
+    t_period[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+
   // process keywords
 
-  int iarg = 4;
-
   while (iarg < narg) {
-    if (strcmp(arg[iarg],"temp") == 0) {
-      if (iarg+4 > narg) error->all(FLERR,"Illegal fix nvt/npt/nph command");
-      t_start = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      t_target = t_start;
-      t_stop = utils::numeric(FLERR,arg[iarg+2],false,lmp);
-      t_period = utils::numeric(FLERR,arg[iarg+3],false,lmp);
-      if (t_start <= 0.0 || t_stop <= 0.0)
-        error->all(FLERR,
-                   "Target temperature for fix nvt/npt/nph cannot be 0.0");
-      iarg += 4;
 
-    } else if (strcmp(arg[iarg],"tchain") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix nvt/npt/nph command");
-      mtchain = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-      // used by FixNVTSllod to preserve non-default value
-      mtchain_default_flag = 0;
-      if (mtchain < 1) error->all(FLERR,"Illegal fix nvt/npt/nph command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"tloop") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix nvt/npt/nph command");
+    if (strcmp(arg[iarg],"tloop") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix temp/nhmesh command");
       nc_tchain = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-      if (nc_tchain < 0) error->all(FLERR,"Illegal fix nvt/npt/nph command");
+      if (nc_tchain < 0) error->all(FLERR,"Illegal fix temp/nhmesh command");
       iarg += 2;
-    } else error->all(FLERR,"Illegal fix nvt/npt/nph command");
+    } else if (strcmp(arg[iarg],"couple") == 0) {
+      if (iarg + n_thermostats*n_thermostats > narg)
+        error->all(FLERR,"Illegal fix temp/nhmesh command");
+      mesh_coupling_flag = 1;
+      // TODO: Accept vector/array input
+      memory->create(mesh_coupling, n_thermostats,
+          n_thermostats, "temp/nhmesh:mesh_coupling");
+      for (i = 0; i < n_thermostats; i++)
+        for (int j = 0; j < n_thermostats; j++) {
+          mesh_coupling[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+          if (mesh_coupling[i][j] < 0 || mesh_coupling[i][j] > 1)
+            error->all(FLERR,"Thermostat couplings must be between 0 and 1");
+          mesh_dof[i] += mesh_coupling[i][j];
+        }
+    } else error->all(FLERR,"Illegal fix temp/nhmesh command");
   }
 
   // convert input periods to frequencies
 
-  // TODO: modify for t_period as vector
-  t_freq = 1.0 / t_period;
+  for (i = 0; i < n_thermostats; i++) t_freq[i] = 1.0 / t_period[i];
 
   // Nose/Hoover temp init
 
-  size_vector = 0;
-
-  int ich;
-  eta = new double[mtchain];
-
-  // add one extra dummy thermostat, set to zero
-
-  eta_dot = new double[mtchain+1];
-  eta_dot[mtchain] = 0.0;
-  eta_dotdot = new double[mtchain];
-  for (ich = 0; ich < mtchain; ich++) {
-    eta[ich] = eta_dot[ich] = eta_dotdot[ich] = 0.0;
+  eta = new double[n_thermostats];
+  eta_dot = new double[n_thermostats];
+  eta_dotdot = new double[n_thermostats];
+  for (i = 0; i < n_thermostats; i++) {
+    eta[i] = eta_dot[i] = eta_dotdot[i] = 0.0;
   }
-  eta_mass = new double[mtchain];
-  size_vector += 2*2*mtchain;
+  eta_mass = new double[n_thermostats];
 
+  size_vector = 4*n_thermostats;
+
+  // Create new temperature compute
+  // id = fix-ID + _temp
+  // change this if other temperature computes become possible in future
+  std::string tcmd = id + std::string("_temp");
+  id_temp = new char[tcmd.size()+1];
+  strcpy(id_temp, tcmd.c_str());
+
+  tcmd += fmt::format(" {} temp/nhmesh {} {}",
+      group->names[igroup], n_thermostats, id_coupling);
+  modify->add_compute(tcmd);
+  tcomputeflag = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -148,6 +176,17 @@ FixNHMesh::~FixNHMesh()
 
   if (tcomputeflag) modify->delete_compute(id_temp);
   delete [] id_temp;
+
+  if (mesh_coupling_flag) memory->destroy(mesh_coupling);
+  delete [] mesh_dof;
+
+  delete [] t_start;
+  delete [] t_stop;
+  delete [] t_current;
+  delete [] t_target;
+  delete [] ke_current;
+  delete [] ke_target;
+  delete [] t_freq;
 
   delete [] eta;
   delete [] eta_dot;
@@ -191,7 +230,7 @@ void FixNHMesh::init()
   dt8 = 0.125 * update->dt;
   dto = dthalf;
 
-  tdrag_factor = 1.0 - (update->dt * t_freq * drag / nc_tchain);
+  // tdrag_factor = 1.0 - (update->dt * t_freq * drag / nc_tchain);
 
   boltz = force->boltz;
   nktv2p = force->nktv2p;
@@ -205,34 +244,61 @@ void FixNHMesh::init()
 }
 
 /* ----------------------------------------------------------------------
-   compute T,P before integrator starts
+   compute T before integrator starts
 ------------------------------------------------------------------------- */
 
 void FixNHMesh::setup(int /*vflag*/)
 {
-  // tdof needed by compute_temp_target()
+  int i;
 
-  t_current = temperature->compute_scalar();
-  tdof = temperature->dof;
-
-  // t_target is needed by NVT and NPT in compute_scalar()
-  // If no thermostat or using fix nphug,
-  // t_target must be defined by other means.
-
-  if (strstr(style,"nphug") == nullptr) {
-    compute_temp_target();
-  }
+  compute_temp_current();
 
   // masses and initial forces on thermostat variables
 
-  eta_mass[0] = tdof * boltz * t_target / (t_freq*t_freq);
-  for (int ich = 1; ich < mtchain; ich++)
-    eta_mass[ich] = boltz * t_target / (t_freq*t_freq);
-  for (int ich = 1; ich < mtchain; ich++) {
-    eta_dotdot[ich] = (eta_mass[ich-1]*eta_dot[ich-1]*eta_dot[ich-1] -
-                       boltz * t_target) / eta_mass[ich];
+  for (i = 0; i < n_thermostats; i++) {
+    eta_mass[i] = tdof[i] * boltz * t_target[i] / (t_freq[i]*t_freq[i]);
+    if (mesh_coupling_flag)
+      for (int j = 0; j < n_thermostats; j++)
+        eta_mass[i] += mesh_coupling[i][j] * boltz * t_target[i];
   }
 
+  for (i = 0; i < n_thermostats; i++) {
+    eta_dotdot[i] = -boltz * t_target[i];
+    if (mesh_coupling_flag)
+      for (int j = 0; j < n_thermostats; j++)
+        eta_dotdot[i] += mesh_coupling[i][j]*eta_mass[j]*eta_dot[j]*eta_dot[j];
+    eta_dotdot[i] /= eta_mass[i];
+  }
+}
+
+/* ----------------------------------------------------------------------
+   Compute temperature of each thermostat from KE of particles and other
+   thermostats
+   Also updates tdof
+------------------------------------------------------------------------- */
+
+void FixNHMesh::compute_temp_current() {
+
+  // NOTE: this also updates the coupling matrix for dof calculation. If another
+  // temperature compute can be used then code here should make sure
+  // coupling->compute_peratom() is called
+  temperature->compute_array();
+  double **&ke = temperature->array;
+
+  // This is also called by temperature compute - could make friend class to
+  // avoid recalculation, but that would probably limit modularity
+  double natoms_temp = group->count(igroup);
+
+  for (int i = 0; i < n_thermostats; i++) {
+    tdof[i] = coupling->therm_sum[i] * temperature->dof /
+              (domain->dimension * natoms_temp) + mesh_dof[i];
+    ke_current[i] = ke[i][0] + ke[i][1] + ke[i][2];
+    ke_current[i] *= force->mvv2e; // TODO: double-check units
+    if (mesh_coupling_flag)
+      for (int j = 0; j < n_thermostats; j++)
+        ke_current[i] += mesh_coupling[i][j] * eta_mass[j]*eta_dot[j]*eta_dot[j];
+    t_current[i] = ke_current[i] / (boltz * tdof[i]);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -244,13 +310,9 @@ void FixNHMesh::initial_integrate(int /*vflag*/)
   // update eta_dot
 
   compute_temp_target();
-  nhc_temp_integrate();
+  nhmesh_temp_integrate();
 
-  // need to recompute pressure to account for change in KE
-  // t_current is up-to-date, but compute_temperature is not
-  // compute appropriately coupled elements of mvv_current
-
-  // NOTE: deleted pressure code here - maybe delete comments above as well
+  // update particles
 
   nve_v();
 
@@ -266,28 +328,16 @@ void FixNHMesh::final_integrate()
 {
   nve_v();
 
-  // re-compute temp before nh_v_press()
-  // only needed for temperature computes with BIAS on reneighboring steps:
-  //   b/c some biases store per-atom values (e.g. temp/profile)
-  //   per-atom values are invalid if reneigh/comm occurred
-  //     since temp->compute() in initial_integrate()
-
-  if (which == BIAS && neighbor->ago == 0)
-    t_current = temperature->compute_scalar();
-
-  // compute new T,P after velocities rescaled by nh_v_press()
+  // compute new T after velocities rescaled by nh_v_press()
   // compute appropriately coupled elements of mvv_current
 
-  t_current = temperature->compute_scalar();
-  tdof = temperature->dof;
-
-  // need to recompute pressure to account for change in KE
-  // t_current is up-to-date, but compute_temperature is not
-  // compute appropriately coupled elements of mvv_current
+  // t_current = temperature->compute_scalar();
+  // tdof = temperature->dof;
+  compute_temp_current();
 
   // update eta_dot
 
-  nhc_temp_integrate();
+  nhmesh_temp_integrate();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -309,7 +359,7 @@ void FixNHMesh::initial_integrate_respa(int /*vflag*/, int ilevel, int /*iloop*/
     // update eta_dot
 
     compute_temp_target();
-    nhc_temp_integrate();
+    nhmesh_temp_integrate();
 
     // recompute pressure to account for change in KE
     // t_current is up-to-date, but compute_temperature is not
@@ -372,8 +422,8 @@ void FixNHMesh::write_restart(FILE *fp)
 
 int FixNHMesh::size_restart_global()
 {
-  int nsize = 2;
-  nsize += 1 + 2*mtchain;
+  int nsize = 1;              // n_thermostats
+  nsize += 2*n_thermostats;   // eta, eta_dot
 
   return nsize;
 }
@@ -384,14 +434,13 @@ int FixNHMesh::size_restart_global()
 
 int FixNHMesh::pack_restart_data(double *list)
 {
-  // TODO: add new variables to this
   int n = 0;
 
-  list[n++] = mtchain;
-  for (int ich = 0; ich < mtchain; ich++)
-    list[n++] = eta[ich];
-  for (int ich = 0; ich < mtchain; ich++)
-    list[n++] = eta_dot[ich];
+  list[n++] = n_thermostats;
+  for (int i = 0; i < n_thermostats; i++)
+    list[n++] = eta[i];
+  for (int i = 0; i < n_thermostats; i++)
+    list[n++] = eta_dot[i];
 
   return n;
 }
@@ -404,16 +453,14 @@ void FixNHMesh::restart(char *buf)
 {
   int n = 0;
   double *list = (double *) buf;
-  int flag = static_cast<int> (list[n++]);
-  if (flag) {
-    int m = static_cast<int> (list[n++]);
-    if (m == mtchain) {
-      for (int ich = 0; ich < mtchain; ich++)
-        eta[ich] = list[n++];
-      for (int ich = 0; ich < mtchain; ich++)
-        eta_dot[ich] = list[n++];
-    } else n += 2*m;
-  }
+  int m = static_cast<int> (list[n++]);
+  if (m != n_thermostats)
+    error->all(FLERR,
+        "fix temp/nhmesh restarted with incompatible coupling compute");
+  for (int i = 0; i < n_thermostats; i++)
+    eta[i] = list[n++];
+  for (int i = 0; i < n_thermostats; i++)
+    eta_dot[i] = list[n++];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -439,6 +486,11 @@ int FixNHMesh::modify_param(int narg, char **arg)
     if (temperature->tempflag == 0)
       error->all(FLERR,
                  "Fix_modify temperature ID does not compute temperature");
+    if (temperature->array_flag == 0 ||
+        temperature->size_array_rows != n_thermostats ||
+        temperature->size_array_cols < 3)
+      error->all(FLERR,
+                 "Fix_modify temperature ID is not compatible with nhmesh");
     if (temperature->igroup != 0 && comm->me == 0)
       error->warning(FLERR,"Temperature for fix modify is not for group all");
 
@@ -454,65 +506,41 @@ int FixNHMesh::modify_param(int narg, char **arg)
 double FixNHMesh::compute_scalar()
 {
   int i;
-  double energy;
-  double kt = boltz * t_target;
-  int ich;
+  double energy = 0.0;
 
-  energy = 0.0;
-
-  // thermostat chain energy is equivalent to Eq. (2) in
-  // Martyna, Tuckerman, Tobias, Klein, Mol Phys, 87, 1117
-  // Sum(0.5*p_eta_k^2/Q_k,k=1,M) + L*k*T*eta_1 + Sum(k*T*eta_k,k=2,M),
-  // where L = tdof
-  //       M = mtchain
-  //       p_eta_k = Q_k*eta_dot[k-1]
-  //       Q_1 = L*k*T/t_freq^2
-  //       Q_k = k*T/t_freq^2, k > 1
-
-  energy += ke_target * eta[0] + 0.5*eta_mass[0]*eta_dot[0]*eta_dot[0];
-  for (ich = 1; ich < mtchain; ich++)
-    energy += kt * eta[ich] + 0.5*eta_mass[ich]*eta_dot[ich]*eta_dot[ich];
+  // Thermostat energy is kinetic + potential:
+  // KE = Sum(0.5 * eta_mass * eta_dot^2)
+  // PE = Sum(dof * k * t_target * eta)
+  for (i = 0; i < n_thermostats; i++)
+    energy += ke_target[i] * eta[i] + 0.5*eta_mass[i]*eta_dot[i]*eta_dot[i];
 
   return energy;
 }
 
 /* ----------------------------------------------------------------------
    return a single element of the following vectors, in this order:
-      eta[tchain], eta_dot[tchain], PE_eta[tchain], KE_eta_dot[tchain]
+      eta[n_thermostats], eta_dot[n_thermostats], PE_eta[n_thermostats],
+      KE_eta_dot[n_thermostats]
 ------------------------------------------------------------------------- */
 
 double FixNHMesh::compute_vector(int n)
 {
   int ilen;
 
-  ilen = mtchain;
+  ilen = n_thermostats;
   if (n < ilen) return eta[n];
   n -= ilen;
-  ilen = mtchain;
+
+  ilen = n_thermostats;
   if (n < ilen) return eta_dot[n];
   n -= ilen;
 
-  double kt = boltz * t_target;
-  double lkt_press = kt;
-  int ich;
-
-  ilen = mtchain;
-  if (n < ilen) {
-    ich = n;
-    if (ich == 0)
-      return ke_target * eta[0];
-    else
-      return kt * eta[ich];
-  }
+  ilen = n_thermostats;
+  if (n < ilen) return ke_target[n] * eta[n];
   n -= ilen;
-  ilen = mtchain;
-  if (n < ilen) {
-    ich = n;
-    if (ich == 0)
-      return 0.5*eta_mass[0]*eta_dot[0]*eta_dot[0];
-    else
-      return 0.5*eta_mass[ich]*eta_dot[ich]*eta_dot[ich];
-  }
+
+  ilen = n_thermostats;
+  if (n < ilen) return 0.5*eta_mass[n]*eta_dot[n]*eta_dot[n];
   n -= ilen;
 
   return 0.0;
@@ -522,7 +550,9 @@ double FixNHMesh::compute_vector(int n)
 
 void FixNHMesh::reset_target(double t_new)
 {
-  t_target = t_start = t_stop = t_new;
+  // TODO: should input be a vector? What calls this?
+  for (int i = 0; i < n_thermostats; i++)
+    t_target[i] = t_start[i] = t_stop[i] = t_new;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -534,14 +564,13 @@ void FixNHMesh::reset_dt()
   dthalf = 0.5 * update->dt;
   dt4 = 0.25 * update->dt;
   dt8 = 0.125 * update->dt;
+  dt16 = 0.0625 * update->dt;
   dto = dthalf;
 
   // If using respa, then remap is performed in innermost level
 
   if (strstr(update->integrate_style,"respa"))
     dto = 0.5*step_respa[0];
-
-  tdrag_factor = 1.0 - (update->dt * t_freq * drag / nc_tchain);
 }
 
 /* ----------------------------------------------------------------------
@@ -551,18 +580,24 @@ void FixNHMesh::reset_dt()
 void *FixNHMesh::extract(const char *str, int &dim)
 {
   dim=0;
+  if (strcmp(str,"n_thermostats") == 0) {
+    return &n_thermostats;
+  }
+  dim=1;
   if (strcmp(str,"t_target") == 0) {
     return &t_target;
   } else if (strcmp(str,"t_start") == 0) {
     return &t_start;
   } else if (strcmp(str,"t_stop") == 0) {
     return &t_stop;
-  } else if (strcmp(str,"mtchain") == 0) {
-    return &mtchain;
-  }
-  dim=1;
-  if (strcmp(str,"eta") == 0) {
+  } else if (strcmp(str,"eta") == 0) {
     return &eta;
+  } else if (strcmp(str,"ke_current")) {
+    return &ke_current;
+  }
+  dim=2;
+  if (mesh_coupling_flag && strcmp(str,"mesh_coupling")) {
+    return &mesh_coupling;
   }
   return nullptr;
 }
@@ -571,68 +606,140 @@ void *FixNHMesh::extract(const char *str, int &dim)
    perform half-step update of chain thermostat variables
 ------------------------------------------------------------------------- */
 
-void FixNHMesh::nhc_temp_integrate()
+void FixNHMesh::nhmesh_temp_integrate()
 {
-  int ich;
-  double expfac;
-  double kecurrent = tdof * boltz * t_current;
+  int i;
+  double expfac[n_thermostats];
+  // ke_current should already be up to date from compute_temp_current();
+  // for (i = 0; i < n_thermostats; i++)
+  //   ke_current[i] = tdof[i] * boltz * t_current[i];
 
   // Update masses, to preserve initial freq, if flag set
 
-  if (eta_mass_flag) {
-    eta_mass[0] = tdof * boltz * t_target / (t_freq*t_freq);
-    for (int ich = 1; ich < mtchain; ich++)
-      eta_mass[ich] = boltz * t_target / (t_freq*t_freq);
+  if (eta_mass_flag)
+    for (i = 0; i < n_thermostats; i++)
+      eta_mass[i] = tdof[i] * boltz * t_target[i] / (t_freq[i]*t_freq[i]);
+
+  for (i = 0; i < n_thermostats; i++) {
+    if (eta_mass[i] > 0.0)
+      eta_dotdot[i] = (ke_current[i] - ke_target[i])/eta_mass[i];
+    else eta_dotdot[i] = 0.0;
   }
 
-  if (eta_mass[0] > 0.0)
-    eta_dotdot[0] = (kecurrent - ke_target)/eta_mass[0];
-  else eta_dotdot[0] = 0.0;
-
   double ncfac = 1.0/nc_tchain;
+  double eta_dot_step[n_thermostats];
   for (int iloop = 0; iloop < nc_tchain; iloop++) {
 
-    for (ich = mtchain-1; ich > 0; ich--) {
-      expfac = exp(-ncfac*dt8*eta_dot[ich+1]);
-      eta_dot[ich] *= expfac;
-      eta_dot[ich] += eta_dotdot[ich] * ncfac*dt4;
-      eta_dot[ich] *= tdrag_factor;
-      eta_dot[ich] *= expfac;
+    // Update thermostat velocities
+    for (i = 0; i < n_thermostats; i++) {
+      if (mesh_coupling_flag) {
+        expfac[i] = 0.0;
+        for (int j = 0; j < n_thermostats; j++)
+          expfac[i] += mesh_coupling[j][i]*eta_dot[j];
+        expfac[i] = exp(-ncfac*dt16*expfac[i]);
+        eta_dot_step[i] = eta_dot[i] * expfac[i];
+      } else expfac[i] = 1.0;
+      eta_dot_step[i] += eta_dotdot[i] * ncfac*dt8;
+      eta_dot_step[i] *= expfac[i];
+    }
+    for (i = 0; i < n_thermostats; i++) {
+      if (mesh_coupling_flag) {
+        expfac[i] = 0.0;
+        for (int j = 0; j < n_thermostats; j++)
+          expfac[i] += mesh_coupling[j][i]*eta_dot_step[j];
+        expfac[i] = exp(-ncfac*dt16*expfac[i]);
+        eta_dot[i] = eta_dot_step[i] * expfac[i];
+      } else expfac[i] = 1.0;
+      eta_dot[i] += eta_dotdot[i] * ncfac*dt8;
+      eta_dot[i] *= expfac[i];
     }
 
-    expfac = exp(-ncfac*dt8*eta_dot[1]);
-    eta_dot[0] *= expfac;
-    eta_dot[0] += eta_dotdot[0] * ncfac*dt4;
-    eta_dot[0] *= tdrag_factor;
-    eta_dot[0] *= expfac;
+    // TODO: double-check above code correctly replaces this
 
-    factor_eta = exp(-ncfac*dthalf*eta_dot[0]);
-    nh_v_temp();
+    //for (ich = mtchain-1; ich > 0; ich--) {
+    //  expfac = exp(-ncfac*dt8*eta_dot[ich+1]);
+    //  eta_dot[ich] *= expfac;
+    //  eta_dot[ich] += eta_dotdot[ich] * ncfac*dt4;
+    //  //eta_dot[ich] *= tdrag_factor;
+    //  eta_dot[ich] *= expfac;
+    //}
 
-    // rescale temperature due to velocity scaling
-    // should not be necessary to explicitly recompute the temperature
+    // expfac = exp(-ncfac*dt8*eta_dot[1]);
+    // eta_dot[0] *= expfac;
+    // eta_dot[0] += eta_dotdot[0] * ncfac*dt4;
+    //eta_dot[0] *= tdrag_factor;
+    // eta_dot[0] *= expfac;
 
-    t_current *= factor_eta*factor_eta;
-    kecurrent = tdof * boltz * t_current;
+    for (i = 0; i < n_thermostats; i++)
+      factor_eta[i] = -ncfac*dthalf*eta_dot[i];
+    nhmesh_v_temp();
 
-    if (eta_mass[0] > 0.0)
-      eta_dotdot[0] = (kecurrent - ke_target)/eta_mass[0];
-    else eta_dotdot[0] = 0.0;
+    // Recalculate current temperatures since nhmesh_v_temp() updates ke_current
+    // only.
+    // TODO: Look into just rescaling ke_current instead of recalculating.
+    //       Might not be possible.
+    for (i = 0; i < n_thermostats; i++)
+      t_current[i] = ke_current[i] / (boltz * tdof[i]);
 
-    for (ich = 0; ich < mtchain; ich++)
-      eta[ich] += ncfac*dthalf*eta_dot[ich];
+    for (i = 0; i < n_thermostats; i++) {
+      if (eta_mass[i] > 0.0)
+        eta_dotdot[i] = (ke_current[i] - ke_target[i])/eta_mass[i];
+      else eta_dotdot[i] = 0.0;
+    }
 
-    eta_dot[0] *= expfac;
-    eta_dot[0] += eta_dotdot[0] * ncfac*dt4;
-    eta_dot[0] *= expfac;
+    // Update thermostat 'positions'
+    for (i = 0; i < n_thermostats; i++)
+      eta[i] += ncfac*dthalf*eta_dot[i];
 
-    for (ich = 1; ich < mtchain; ich++) {
-      expfac = exp(-ncfac*dt8*eta_dot[ich+1]);
-      eta_dot[ich] *= expfac;
-      eta_dotdot[ich] = (eta_mass[ich-1]*eta_dot[ich-1]*eta_dot[ich-1]
-                         - boltz * t_target)/eta_mass[ich];
-      eta_dot[ich] += eta_dotdot[ich] * ncfac*dt4;
-      eta_dot[ich] *= expfac;
+    // TODO: double-check that the code below this is a correct replacement
+    // eta_dot[0] *= expfac;
+    // eta_dot[0] += eta_dotdot[0] * ncfac*dt4;
+    // eta_dot[0] *= expfac;
+
+    // for (ich = 1; ich < mtchain; ich++) {
+    //   expfac = exp(-ncfac*dt8*eta_dot[ich+1]);
+    //   eta_dot[ich] *= expfac;
+    //   eta_dotdot[ich] = (eta_mass[ich-1]*eta_dot[ich-1]*eta_dot[ich-1]
+    //                      - boltz * t_target)/eta_mass[ich];
+    //   eta_dot[ich] += eta_dotdot[ich] * ncfac*dt4;
+    //   eta_dot[ich] *= expfac;
+    // }
+
+    // Update thermostat velocities
+    for (i = 0; i < n_thermostats; i++) {
+      if (mesh_coupling_flag) {
+        expfac[i] = 0.0;
+        for (int j = 0; j < n_thermostats; j++) {
+          expfac[i] += mesh_coupling[j][i]*eta_dot[j];
+        }
+        expfac[i] = exp(-ncfac*dt16*expfac[i]);
+        eta_dot_step[i] = eta_dot[i] * expfac[i];
+      } else expfac[i] = 1.0;
+    }
+    for (i = 0; i < n_thermostats; i++) {
+      if (expfac[i] != 1.0)
+        for (int j = 0; j < n_thermostats; j++)
+          eta_dotdot[i] += mesh_coupling[i][j]*eta_mass[j]/eta_mass[i]*
+            (eta_dot_step[j]*eta_dot_step[j] - eta_dot[j]*eta_dot[j]);
+      eta_dot_step[i] += eta_dotdot[i] * ncfac*dt8;
+      eta_dot_step[i] *= expfac[i];
+    }
+    for (i = 0; i < n_thermostats; i++) {
+      if (mesh_coupling_flag) {
+        expfac[i] = 0.0;
+        for (int j = 0; j < n_thermostats; j++)
+          expfac[i] += mesh_coupling[j][i]*eta_dot_step[j];
+        expfac[i] = exp(-ncfac*dt16*expfac[i]);
+        eta_dot[i] = eta_dot_step[i] * expfac[i];
+      } else expfac[i] = 1.0;
+    }
+    for (i = 0; i < n_thermostats; i++) {
+      if (expfac[i] != 1.0)
+        for (int j = 0; j < n_thermostats; j++)
+          eta_dotdot[i] += mesh_coupling[i][j]*eta_mass[j]/eta_mass[i]*
+            (eta_dot_step[j]*eta_dot_step[j] - eta_dot[j]*eta_dot[j]);
+      eta_dot[i] += eta_dotdot[i] * ncfac*dt8;
+      eta_dot[i] *= expfac[i];
     }
   }
 }
@@ -699,33 +806,59 @@ void FixNHMesh::nve_x()
 
 /* ----------------------------------------------------------------------
    perform half-step thermostat scaling of velocities
+   also updates ke_current
 -----------------------------------------------------------------------*/
 
-void FixNHMesh::nh_v_temp()
+void FixNHMesh::nhmesh_v_temp()
 {
   double **v = atom->v;
+  double *m = atom->mass;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
+  double ke_local[n_thermostats];
+  double fac;
+  for (int i = 0; i < n_thermostats; i++) ke_local[i] = 0.0;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
   if (which == NOBIAS) {
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
-        v[i][0] *= factor_eta;
-        v[i][1] *= factor_eta;
-        v[i][2] *= factor_eta;
+        fac = 0;
+        for (int j = 0; j < n_thermostats; j++)
+          fac += coupling->array_atom[i][j] * factor_eta[j];
+        fac = exp(fac);
+        v[i][0] *= fac;
+        v[i][1] *= fac;
+        v[i][2] *= fac;
+        for (int j = 0; j < n_thermostats; j++)
+          ke_local[j] += coupling->array_atom[i][j] * m[i] *
+            (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]);
       }
     }
   } else if (which == BIAS) {
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         temperature->remove_bias(i,v[i]);
-        v[i][0] *= factor_eta;
-        v[i][1] *= factor_eta;
-        v[i][2] *= factor_eta;
+        fac = 0;
+        for (int j = 0; j < n_thermostats; j++)
+          fac += coupling->array_atom[i][j] * factor_eta[j];
+        fac = exp(fac);
+        v[i][0] *= fac;
+        v[i][1] *= fac;
+        v[i][2] *= fac;
+        for (int j = 0; j < n_thermostats; j++)
+          ke_local[j] += coupling->array_atom[i][j] * m[i] *
+            (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]);
         temperature->restore_bias(i,v[i]);
       }
     }
+  }
+  MPI_Allreduce(ke_local,ke_current,n_thermostats,MPI_DOUBLE,MPI_SUM,world);
+  for (int i = 0; i < n_thermostats; i++) {
+    ke_current[i] *= force->mvv2e;
+    if (mesh_coupling_flag)
+      for (int j = 0; j < n_thermostats; j++)
+        ke_current[i] += mesh_coupling[i][j]*eta_mass[j]*eta_dot[j]*eta_dot[j];
   }
 }
 
@@ -738,17 +871,21 @@ void FixNHMesh::compute_temp_target()
   double delta = update->ntimestep - update->beginstep;
   if (delta != 0.0) delta /= update->endstep - update->beginstep;
 
-  t_target = t_start + delta * (t_stop-t_start);
-  ke_target = tdof * boltz * t_target;
+  for (int i = 0; i < n_thermostats; i++) {
+    t_target[i] = t_start[i] + delta * (t_stop[i] - t_start[i]);
+    ke_target[i] = tdof[i] * boltz * t_target[i];
+  }
 }
 
 /* ----------------------------------------------------------------------
-   memory usage of Irregular
+   memory usage
 ------------------------------------------------------------------------- */
 
 double FixNHMesh::memory_usage()
 {
   double bytes = 0.0;
-  // TODO: add anything necessary here
+  if (mesh_coupling_flag)
+    bytes += n_thermostats*n_thermostats * sizeof(double);
+  // Should stack-allocated arrays be included here too?
   return bytes;
 }
