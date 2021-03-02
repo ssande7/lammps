@@ -30,7 +30,7 @@
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(temp/nhmesh,ComputeTemp)
+ComputeStyle(temp/nhmesh,ComputeTempNHMesh)
 
 #else
 

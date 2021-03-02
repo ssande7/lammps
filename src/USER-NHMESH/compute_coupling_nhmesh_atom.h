@@ -50,7 +50,7 @@ INPUT:
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(nhmesh/coupling,ComputeTemp)
+ComputeStyle(nhmesh/coupling,ComputeCouplingNHMesh)
 
 #else
 
