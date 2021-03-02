@@ -72,8 +72,8 @@ class ComputeCouplingNHMesh : public Compute {
  protected:
   int n_thermostats;    // Number of thermostats controlling the atoms
   int nmax;             // Max. number of atoms
-  double *therm_sum;
-  double **coupling;
+  double *therm_sum;    // Sums of dofs controlled by each thermostat
+  double **coupling;    // particle-thermostat couplings
 
   enum {
     GRID,
@@ -88,8 +88,8 @@ class ComputeCouplingNHMesh : public Compute {
 
   double **points;
   char **points_str;
-  bool *points_varflag;
-  bool points_anyvar;
+  int *points_varflag;
+  int points_anyvar;
   enum {
     LINEAR,
     GAUSSIAN,

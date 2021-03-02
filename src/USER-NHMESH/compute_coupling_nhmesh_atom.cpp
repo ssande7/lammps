@@ -72,14 +72,14 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     memory->create(points_str,n_thermostats-1,"nhmesh/coupling:points_str");
     memory->create(points_varflag,n_thermostats-1,
         "nhmesh/coupling:points_varflag");
-    points_anyvar = false;
+    points_anyvar = 0;
     int iarg = 5;
     int j,ivar;
     for (i=0; i<n_thermostats-1; i++) {
       ivar = input->variable->find(arg[iarg]);
       points_varflag[i] = ivar >= 0;
       if (points_varflag[i]) {
-        points_anyvar = true;
+        points_anyvar = 1;
         if (!input->variable->vectorstyle(ivar))
           error->all(FLERR,
               "Compute nhmesh/coupling points variables must be vector style");
