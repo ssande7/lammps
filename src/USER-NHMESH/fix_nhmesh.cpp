@@ -360,6 +360,7 @@ void FixNHMesh::initial_integrate_respa(int /*vflag*/, int ilevel, int /*iloop*/
 
     // update eta_dot
 
+    compute_temp_current();
     compute_temp_target();
     nhmesh_temp_integrate();
 
@@ -639,8 +640,8 @@ void FixNHMesh::nhmesh_temp_integrate()
         for (int j = 0; j < n_thermostats; j++)
           expfac[i] += mesh_coupling[j][i]*eta_dot[j];
         expfac[i] = exp(-ncfac*dt16*expfac[i]);
-        eta_dot_step[i] = eta_dot[i] * expfac[i];
       } else expfac[i] = 1.0;
+      eta_dot_step[i] = eta_dot[i] * expfac[i];
       eta_dot_step[i] += eta_dotdot[i] * ncfac*dt8;
       eta_dot_step[i] *= expfac[i];
     }
@@ -650,8 +651,8 @@ void FixNHMesh::nhmesh_temp_integrate()
         for (int j = 0; j < n_thermostats; j++)
           expfac[i] += mesh_coupling[j][i]*eta_dot_step[j];
         expfac[i] = exp(-ncfac*dt16*expfac[i]);
-        eta_dot[i] = eta_dot_step[i] * expfac[i];
-      } else expfac[i] = 1.0;
+      } // else expfac[i] = 1.0; // should already be set from prev. loop
+      eta_dot[i] = eta_dot_step[i] * expfac[i];
       eta_dot[i] += eta_dotdot[i] * ncfac*dt8;
       eta_dot[i] *= expfac[i];
     }
@@ -715,8 +716,8 @@ void FixNHMesh::nhmesh_temp_integrate()
           expfac[i] += mesh_coupling[j][i]*eta_dot[j];
         }
         expfac[i] = exp(-ncfac*dt16*expfac[i]);
-        eta_dot_step[i] = eta_dot[i] * expfac[i];
-      } else expfac[i] = 1.0;
+      } // else expfac[i] = 1.0; // should already be set
+      eta_dot_step[i] = eta_dot[i] * expfac[i];
     }
     for (i = 0; i < n_thermostats; i++) {
       if (expfac[i] != 1.0)
@@ -732,8 +733,8 @@ void FixNHMesh::nhmesh_temp_integrate()
         for (int j = 0; j < n_thermostats; j++)
           expfac[i] += mesh_coupling[j][i]*eta_dot_step[j];
         expfac[i] = exp(-ncfac*dt16*expfac[i]);
-        eta_dot[i] = eta_dot_step[i] * expfac[i];
-      } else expfac[i] = 1.0;
+      } // else expfac[i] = 1.0;
+      eta_dot[i] = eta_dot_step[i] * expfac[i];
     }
     for (i = 0; i < n_thermostats; i++) {
       if (expfac[i] != 1.0)
