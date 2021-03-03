@@ -38,8 +38,8 @@ ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
 
   scalar_flag = vector_flag = array_flag = 1;
   size_vector = 6;
-  size_array_cols = n_thermostats;
-  size_array_rows = 6;
+  size_array_cols = 6;
+  size_array_rows = n_thermostats;
   size_array_rows_variable = 1;
   extscalar = 0;
   extvector = 1;

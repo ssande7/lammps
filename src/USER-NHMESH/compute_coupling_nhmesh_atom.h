@@ -87,8 +87,8 @@ class ComputeCouplingNHMesh : public Compute {
   double grid_lo[3], grid_hi[3];
 
   double **points;
-  char **points_str;
-  int *points_varflag;
+  char ***points_str;
+  int **points_varflag;
   int points_anyvar;
   enum {
     LINEAR,

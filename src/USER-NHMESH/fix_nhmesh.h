@@ -33,8 +33,7 @@ NOTE:
 
 /* -------------------------------------------------------------------------
 INPUT:
-fix fix-ID grp-ID temp/nhmesh N c_couple [t_start] [t_stop] [t_period] kwargs
-  * N            = Number of thermostats
+fix fix-ID grp-ID temp/nhmesh c_couple [t_start] [t_stop] [t_period] kwargs
   * c_couple     = compute that returns the coupling matrix mapping
                    particles to thermostats.
   * [t_start]    = vector of initial temperatures of length N

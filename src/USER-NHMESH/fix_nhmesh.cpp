@@ -83,7 +83,7 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
 
   int iarg = 4, i;
 
-  if (iarg+3*n_thermostats >= narg)
+  if (iarg+3*n_thermostats > narg)
     error->all(FLERR,"Illegal fix temp/nhmesh command");
 
   double t_period[n_thermostats];
@@ -95,6 +95,8 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
   ke_current = new double[n_thermostats];
   ke_target = new double[n_thermostats];
   mesh_dof = new double[n_thermostats];
+  tdof = new double[n_thermostats];
+  factor_eta = new double[n_thermostats];
   for (i = 0; i < n_thermostats; i++) mesh_dof[i] = 0.0;
 
   // TODO: accept vectors here
@@ -263,10 +265,7 @@ void FixNHMesh::setup(int /*vflag*/)
   }
 
   for (i = 0; i < n_thermostats; i++) {
-    eta_dotdot[i] = -boltz * t_target[i];
-    if (mesh_coupling_flag)
-      for (int j = 0; j < n_thermostats; j++)
-        eta_dotdot[i] += mesh_coupling[i][j]*eta_mass[j]*eta_dot[j]*eta_dot[j];
+    eta_dotdot[i] = ke_current[i] - tdof[i] * boltz * t_target[i];
     eta_dotdot[i] /= eta_mass[i];
   }
 }
@@ -290,8 +289,9 @@ void FixNHMesh::compute_temp_current() {
   double natoms_temp = group->count(igroup);
 
   for (int i = 0; i < n_thermostats; i++) {
-    tdof[i] = coupling->therm_sum[i] * temperature->dof /
-              (domain->dimension * natoms_temp) + mesh_dof[i];
+    tdof[i] = coupling->therm_sum[i]*temperature->dof/natoms_temp + mesh_dof[i];
+    // update ke_target since dof might have changed
+    ke_target[i] = tdof[i] * boltz * t_target[i];
     ke_current[i] = ke[i][0] + ke[i][1] + ke[i][2];
     ke_current[i] *= force->mvv2e; // TODO: double-check units
     if (mesh_coupling_flag)
@@ -309,6 +309,7 @@ void FixNHMesh::initial_integrate(int /*vflag*/)
 {
   // update eta_dot
 
+  compute_temp_current();
   compute_temp_target();
   nhmesh_temp_integrate();
 
@@ -326,6 +327,7 @@ void FixNHMesh::initial_integrate(int /*vflag*/)
 
 void FixNHMesh::final_integrate()
 {
+  // NOTE: should temp be recalculated after position updates???
   nve_v();
 
   // compute new T after velocities rescaled by nh_v_press()
@@ -812,17 +814,21 @@ void FixNHMesh::nve_x()
 void FixNHMesh::nhmesh_v_temp()
 {
   double **v = atom->v;
-  double *m = atom->mass;
+  double *mass = atom->mass;
+  double *rmass = atom->rmass;
+  int *type = atom->type;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
   double ke_local[n_thermostats];
-  double fac;
+  double fac, massone;
   for (int i = 0; i < n_thermostats; i++) ke_local[i] = 0.0;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
   if (which == NOBIAS) {
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
+        if (rmass) massone = rmass[i];
+        else massone = mass[type[i]];
         fac = 0;
         for (int j = 0; j < n_thermostats; j++)
           fac += coupling->array_atom[i][j] * factor_eta[j];
@@ -831,7 +837,7 @@ void FixNHMesh::nhmesh_v_temp()
         v[i][1] *= fac;
         v[i][2] *= fac;
         for (int j = 0; j < n_thermostats; j++)
-          ke_local[j] += coupling->array_atom[i][j] * m[i] *
+          ke_local[j] += coupling->array_atom[i][j] * massone *
             (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]);
       }
     }
@@ -847,7 +853,7 @@ void FixNHMesh::nhmesh_v_temp()
         v[i][1] *= fac;
         v[i][2] *= fac;
         for (int j = 0; j < n_thermostats; j++)
-          ke_local[j] += coupling->array_atom[i][j] * m[i] *
+          ke_local[j] += coupling->array_atom[i][j] * massone *
             (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]);
         temperature->restore_bias(i,v[i]);
       }

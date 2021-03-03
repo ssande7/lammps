@@ -35,10 +35,14 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
 {
   if (narg < 5) error->all(FLERR,"Illegal compute nhmesh/coupling command");
 
+  int i;
+
+  // defaults
+  for (i = 0; i < 3; i++) grid_decay[i] = 1;
+
   n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
   if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
 
-  int i;
   if (strcmp(arg[4], "grid") == 0) {
     heuristic = GRID;
     if (narg < 14) error->all(FLERR,"Illegal compute nhmesh/coupling command");
@@ -69,27 +73,30 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
   } else if (strcmp(arg[4], "points") == 0) {
     heuristic = POINTS;
     memory->create(points,n_thermostats-1,4,"nhmesh/coupling:points");
-    memory->create(points_str,n_thermostats-1,"nhmesh/coupling:points_str");
-    memory->create(points_varflag,n_thermostats-1,
-        "nhmesh/coupling:points_varflag");
+    points_str = new char**[n_thermostats-1];
+    points_varflag = new int*[n_thermostats-1];
     points_anyvar = 0;
     int iarg = 5;
     int j,ivar;
     for (i=0; i<n_thermostats-1; i++) {
-      ivar = input->variable->find(arg[iarg]);
-      points_varflag[i] = ivar >= 0;
-      if (points_varflag[i]) {
-        points_anyvar = 1;
-        if (!input->variable->vectorstyle(ivar))
-          error->all(FLERR,
-              "Compute nhmesh/coupling points variables must be vector style");
-        points_str[i] = utils::strdup(arg[iarg]);
-      } else {
-        if (narg < iarg+4)
-          error->all(FLERR,"Illegal compute nhmesh/coupling command");
-        for (j=0; j<4; j++)
+      if (narg < iarg+4)
+        error->all(FLERR,"Illegal compute nhmesh/coupling command");
+      points_varflag[i] = new int[4];
+      points_str[i] = new char*[4];
+      for (int j = 0; j < 4; j++) {
+        ivar = input->variable->find(arg[iarg]);
+        if (ivar >= 0) {
+          points_varflag[i][j] = 1;
+          points_anyvar = 1;
+          if (!input->variable->equalstyle(ivar))
+            error->all(FLERR,
+                "Compute nhmesh/coupling points variables must be equal style");
+          points_str[i][j] = utils::strdup(arg[iarg++]);
+        } else {
+          points_varflag[i][j] = 0;
           points[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
-        points_str[i] = nullptr;
+          points_str[i][j] = nullptr;
+        }
       }
     }
     if (narg < iarg+1)
@@ -119,10 +126,16 @@ ComputeCouplingNHMesh::~ComputeCouplingNHMesh()
       memory->destroy(grid_idtherm);
     } else if (heuristic == POINTS) {
       memory->destroy(points);
-      memory->destroy(points_str);
-      memory->destroy(points_varflag);
+      for (int i = 0; i < n_thermostats-1; i++) {
+        for (int j = 0; j < 4; j++)
+          if (points_str[i][j]) delete [] points_str[i][j];
+        delete [] points_str[i];
+        delete [] points_varflag[i];
+      }
+      delete [] points_str;
+      delete [] points_varflag;
     }
-    memory->destroy(array_atom);
+    memory->destroy(coupling);
   }
 }
 
@@ -145,22 +158,23 @@ void ComputeCouplingNHMesh::update_heuristics() {
   switch (heuristic) {
     case POINTS:
       if (points_anyvar) {
-        double *pt_var;
-        int ivar, vlen;
+        double pt_var;
+        int ivar;
         for (int i=0; i<n_thermostats-1; i++)
-          if (points_varflag[i]) {
-            ivar = input->variable->find(points_str[i]);
-            vlen = input->variable->compute_vector(ivar, &pt_var);
-            if (vlen<4)
-              error->all(FLERR, "Compute nhmesh/coupling point variables must "
-                                "return a vector of length 4");
-            for (int j=0; j<4; j++) points[i][j]=pt_var[j];
+          for (int j = 0; j < 4; j++) {
+            if (points_varflag[i][j]) {
+              ivar = input->variable->find(points_str[i][j]);
+              points[i][j] = input->variable->compute_equal(ivar);
+            }
           }
       }
       break;
     case GRID:
-      for (int i = 0; i < 3; i++)
-        grid_dlength[i] = grid_decay[i]*(grid_hi[i]-grid_lo[i])/(grid_n[i]-1);
+      for (int i = 0; i < 3; i++) {
+        if (grid_n[i] > 1)
+          grid_dlength[i] = grid_decay[i]*(grid_hi[i]-grid_lo[i])/(grid_n[i]-1);
+        else grid_dlength[i] = 0;
+      }
       for (int j = 0; j < n_thermostats; j++) {
         grid_idtherm[j][0] = j / (grid_n[1]*grid_n[2]);
         grid_idtherm[j][1] = (j - grid_idtherm[j][0]*grid_n[1]*grid_n[2]) / grid_n[2];
@@ -206,15 +220,16 @@ double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
         double pi[3], dx;
         for (i = 0; i < 3; i++) {
           if (grid_decay[i] != grid_n[i])
-            pi[i] = grid_lo[i] + grid_idtherm[j][i] * (grid_hi[i] - grid_lo[i]);
+            pi[i] = grid_lo[i] + grid_idtherm[j][i] *
+                    (grid_hi[i] - grid_lo[i]) / grid_n[i];
           else pi[i] = x[i];
         }
         domain->remap_near(pi, x);
         double wt = 1.0;
         for (i = 0; i < 3; i++) {
           dx = fabs(x[i] - pi[i]);
-          if (dx > grid_dlength[i]) return 0.0;
-          else wt *= 1.0 - dx/grid_dlength[i];
+          if (grid_dlength[i] > 0 && dx > grid_dlength[i]) return 0.0;
+          else if (grid_dlength[i] != 0.0) wt *= 1.0 - dx/grid_dlength[i];
         }
         return wt;
       }
