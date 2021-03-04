@@ -293,7 +293,7 @@ void FixNHMesh::compute_temp_current() {
     // update ke_target since dof might have changed
     ke_target[i] = tdof[i] * boltz * t_target[i];
     ke_current[i] = ke[i][0] + ke[i][1] + ke[i][2];
-    ke_current[i] *= force->mvv2e; // TODO: double-check units
+    ke_current[i] *= force->mvv2e;
     if (mesh_coupling_flag)
       for (int j = 0; j < n_thermostats; j++)
         ke_current[i] += mesh_coupling[i][j] * eta_mass[j]*eta_dot[j]*eta_dot[j];
@@ -657,22 +657,6 @@ void FixNHMesh::nhmesh_temp_integrate()
       eta_dot[i] *= expfac[i];
     }
 
-    // TODO: double-check above code correctly replaces this
-
-    //for (ich = mtchain-1; ich > 0; ich--) {
-    //  expfac = exp(-ncfac*dt8*eta_dot[ich+1]);
-    //  eta_dot[ich] *= expfac;
-    //  eta_dot[ich] += eta_dotdot[ich] * ncfac*dt4;
-    //  //eta_dot[ich] *= tdrag_factor;
-    //  eta_dot[ich] *= expfac;
-    //}
-
-    // expfac = exp(-ncfac*dt8*eta_dot[1]);
-    // eta_dot[0] *= expfac;
-    // eta_dot[0] += eta_dotdot[0] * ncfac*dt4;
-    //eta_dot[0] *= tdrag_factor;
-    // eta_dot[0] *= expfac;
-
     for (i = 0; i < n_thermostats; i++)
       factor_eta[i] = -ncfac*dthalf*eta_dot[i];
     nhmesh_v_temp();
@@ -693,20 +677,6 @@ void FixNHMesh::nhmesh_temp_integrate()
     // Update thermostat 'positions'
     for (i = 0; i < n_thermostats; i++)
       eta[i] += ncfac*dthalf*eta_dot[i];
-
-    // TODO: double-check that the code below this is a correct replacement
-    // eta_dot[0] *= expfac;
-    // eta_dot[0] += eta_dotdot[0] * ncfac*dt4;
-    // eta_dot[0] *= expfac;
-
-    // for (ich = 1; ich < mtchain; ich++) {
-    //   expfac = exp(-ncfac*dt8*eta_dot[ich+1]);
-    //   eta_dot[ich] *= expfac;
-    //   eta_dotdot[ich] = (eta_mass[ich-1]*eta_dot[ich-1]*eta_dot[ich-1]
-    //                      - boltz * t_target)/eta_mass[ich];
-    //   eta_dot[ich] += eta_dotdot[ich] * ncfac*dt4;
-    //   eta_dot[ich] *= expfac;
-    // }
 
     // Update thermostat velocities
     for (i = 0; i < n_thermostats; i++) {

@@ -69,7 +69,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
           error->all(FLERR,"Illegal grid decay length for nhmesh/coupling");
       }
     }
-    memory->create(grid_idtherm,n_thermostats,3,"nhmesh/coupling:grid_idtherm");
+    memory->create(grid_pts,n_thermostats,3,"nhmesh/coupling:grid_pts");
   } else if (strcmp(arg[4], "points") == 0) {
     heuristic = POINTS;
     memory->create(points,n_thermostats-1,4,"nhmesh/coupling:points");
@@ -123,7 +123,7 @@ ComputeCouplingNHMesh::~ComputeCouplingNHMesh()
     memory->destroy(therm_sum);
 
     if (heuristic == GRID) {
-      memory->destroy(grid_idtherm);
+      memory->destroy(grid_pts);
     } else if (heuristic == POINTS) {
       memory->destroy(points);
       for (int i = 0; i < n_thermostats-1; i++) {
@@ -175,11 +175,13 @@ void ComputeCouplingNHMesh::update_heuristics() {
           grid_dlength[i] = grid_decay[i]*(grid_hi[i]-grid_lo[i])/(grid_n[i]-1);
         else grid_dlength[i] = 0;
       }
+      int gid[3];
       for (int j = 0; j < n_thermostats; j++) {
-        grid_idtherm[j][0] = j / (grid_n[1]*grid_n[2]);
-        grid_idtherm[j][1] = (j - grid_idtherm[j][0]*grid_n[1]*grid_n[2]) / grid_n[2];
-        grid_idtherm[j][2] = j - grid_idtherm[j][0]*grid_n[1]*grid_n[2] -
-                             grid_idtherm[j][1]*grid_n[2];
+        gid[0] = j / (grid_n[1]*grid_n[2]);
+        gid[1] = (j - gid[0]*grid_n[1]*grid_n[2]) / grid_n[2];
+        gid[2] = j - gid[0]*grid_n[1]*grid_n[2] - gid[1]*grid_n[2];
+        for (int i = 0; i < 3; i++)
+          grid_pts[j][i] = grid_lo[i]+gid[i]*(grid_hi[i]-grid_lo[i])/grid_n[i];
       }
       break;
   }
@@ -193,13 +195,13 @@ double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
     case POINTS:
       {
         if (j == n_thermostats-1) return 0;
-        double p_closest[3];
-        for (int i = 0; i < 3; i++) p_closest[i] = points[j][i];
-        domain->remap_near(p_closest, x);
+        double pi[3];
+        for (int i = 0; i < 3; i++) pi[i] = points[j][i];
+        domain->remap_near(pi, x);
         double r2,dx,dy,dz;
-        dx = fabs(x[0]-p_closest[0]);
-        dy = fabs(x[1]-p_closest[1]);
-        dz = fabs(x[2]-p_closest[2]);
+        dx = fabs(x[0]-pi[0]);
+        dy = fabs(x[1]-pi[1]);
+        dz = fabs(x[2]-pi[2]);
         r2 = dx*dx + dy*dy + dz*dz;
 
         switch (points_decay) {
@@ -219,9 +221,8 @@ double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
         int i;
         double pi[3], dx;
         for (i = 0; i < 3; i++) {
-          if (grid_decay[i] != grid_n[i])
-            pi[i] = grid_lo[i] + grid_idtherm[j][i] *
-                    (grid_hi[i] - grid_lo[i]) / grid_n[i];
+          if (grid_dlength[i] != 0)
+            pi[i] = grid_pts[j][i];
           else pi[i] = x[i];
         }
         domain->remap_near(pi, x);

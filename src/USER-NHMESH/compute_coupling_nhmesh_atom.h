@@ -81,7 +81,7 @@ class ComputeCouplingNHMesh : public Compute {
   } heuristic;
 
   int grid_n[3];
-  int **grid_idtherm;
+  double **grid_pts;
   double grid_decay[3];
   double grid_dlength[3];
   double grid_lo[3], grid_hi[3];
