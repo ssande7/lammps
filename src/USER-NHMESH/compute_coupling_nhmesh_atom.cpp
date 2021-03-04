@@ -47,8 +47,22 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     heuristic = GRID;
     if (narg < 14) error->all(FLERR,"Illegal compute nhmesh/coupling command");
     for (i = 0; i < 3; i++) {
-      grid_lo[i] = utils::numeric(FLERR,arg[5+2*i],false,lmp);
-      grid_hi[i] = utils::numeric(FLERR,arg[6+2*i],false,lmp);
+      int ivar = input->variable->find(arg[5+2*i]);
+      if (ivar >= 0) {
+        if (!input->variable->equalstyle(ivar))
+          error->all(FLERR,
+              "Compute nhmesh/coupling grid variables must be equal style");
+        // TODO: evaluate during run to allow variable volume etc?
+        grid_lo[i] = input->variable->compute_equal(ivar);
+      } else grid_lo[i] = utils::numeric(FLERR,arg[5+2*i],false,lmp);
+      ivar = input->variable->find(arg[6+2*i]);
+      if (ivar >= 0) {
+        if (!input->variable->equalstyle(ivar))
+          error->all(FLERR,
+              "Compute nhmesh/coupling grid variables must be equal style");
+        // TODO: evaluate during run to allow variable volume etc?
+        grid_hi[i] = input->variable->compute_equal(ivar);
+      } grid_hi[i] = utils::numeric(FLERR,arg[6+2*i],false,lmp);
       if (grid_lo[i] > grid_hi[i])
         error->all(FLERR,"Illegal grid boundaries for nhmesh/coupling");
     }

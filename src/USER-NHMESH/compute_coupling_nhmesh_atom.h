@@ -137,6 +137,10 @@ E: Compute nhmesh/coupling points variables must be vector style
 
 Self-explanatory.
 
+E: Compute nhmesh/coupling grid variables must be equal style
+
+Self-explanatory.
+
 E: Compute nhmesh/coupling point variables must return a vector of length 4
 
 Self-explanatory.
