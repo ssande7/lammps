@@ -12,6 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_temp_nhmesh.h"
+#include "compute_coupling_nhmesh_atom.h"
 
 #include "atom.h"
 #include "update.h"
@@ -29,18 +30,26 @@ using namespace LAMMPS_NS;
 ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg)
 {
-  if (narg != 5) error->all(FLERR,"Illegal compute temp/nhmesh command");
+  if (narg != 4) error->all(FLERR,"Illegal compute temp/nhmesh command");
 
   n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
   if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
 
   idcoupling = utils::strdup(arg[4]);
 
+  int icoupling = modify->find_compute(idcoupling);
+  if (icoupling < 0)
+    error->all(FLERR,"Compute ID for temp/nhmesh does not exist");
+  Compute *comp = modify->compute[icoupling];
+  coupling = dynamic_cast<ComputeCouplingNHMesh *>(comp);
+  if (coupling == nullptr)
+    error->all(FLERR,"Invalid coupling compute for temp/nhmesh");
+  n_thermostats = coupling->get_n_thermostats();
+
   scalar_flag = vector_flag = array_flag = 1;
   size_vector = 6;
   size_array_cols = 6;
   size_array_rows = n_thermostats;
-  size_array_rows_variable = 1;
   extscalar = 0;
   extvector = 1;
   extarray = 1;
@@ -65,15 +74,7 @@ ComputeTempNHMesh::~ComputeTempNHMesh()
 
 void ComputeTempNHMesh::init()
 {
-  // get pointer to coupling compute
-
-  int icoupling = modify->find_compute(idcoupling);
-  if (icoupling == -1)
-    error->all(FLERR,"Compute ID for temp/nhmesh does not exist");
-  coupling = modify->compute[icoupling];
-  if (coupling->size_peratom_cols != n_thermostats)
-    error->all(FLERR,
-        "Compute doesn't output the correct array size for temp/nhmesh");
+  dof_compute();
 }
 
 /* ---------------------------------------------------------------------- */

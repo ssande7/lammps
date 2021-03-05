@@ -55,7 +55,9 @@ class ComputeTempNHMesh : public Compute {
   double tfactor;
 
   char *idcoupling;
-  Compute *coupling;    // Compute that calculates atom-thermostat couplings
+
+  // Compute that calculates atom-thermostat couplings
+  class ComputeCouplingNHMesh *coupling;
 
   int n_thermostats;    // Number of thermostats controlling the atoms
 

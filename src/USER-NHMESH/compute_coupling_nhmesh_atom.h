@@ -73,6 +73,8 @@ class ComputeCouplingNHMesh : public Compute {
   void setup();
   virtual void compute_peratom();
 
+  virtual int get_n_thermostats() {return n_thermostats;}
+
  protected:
   int n_thermostats;    // Number of thermostats controlling the atoms
   int nmax;             // Max. number of atoms
@@ -105,6 +107,7 @@ class ComputeCouplingNHMesh : public Compute {
   virtual double calc_weight(double *, int&);
 
   // FixNHMesh needs access to therm_sum for efficiency reasons
+  // could expose via public get method instead, but that seems less safe
   friend class FixNHMesh;
 };
 
