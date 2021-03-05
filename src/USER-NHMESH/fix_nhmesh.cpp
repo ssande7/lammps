@@ -825,6 +825,7 @@ void FixNHMesh::nhmesh_v_temp()
       }
     }
   }
+  // printf("%g\n", ke_local[0]);
   MPI_Allreduce(ke_local,ke_current,n_thermostats,MPI_DOUBLE,MPI_SUM,world);
   for (int i = 0; i < n_thermostats; i++) {
     ke_current[i] *= force->mvv2e;
