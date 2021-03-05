@@ -35,11 +35,15 @@ INPUT:
                       influence does not decay in that direction).  Influence
                       is constant outside the region (equal to the border
                       value)
-    + points [p_1] ... [p_N-1] (decay_type)
+    + points (nofill) [p_1] ... [p_N-1] (decay_type)
+       - nofill     = optional, set to exclude final thermostat that covers any
+                      un- or partially-thermostatted particles
        - [p_x]      = vector of [x, y, z, rad] for each thermostat except the
                       last giving points and decay lengths for each. The last
                       thermostat will control any atoms not (fully) conrolled by
-                      the other thermostats
+                      the other thermostats if nofill is not set. Use NULL  for
+                      x or y or z to extend the point infinitely in that
+                      direction (eg. as a line/plane)
        - decay_type = 'linear' or 'gaussian' or 'exp' or 'inv'
                       If the sum of thermostat influences on a given atom is > 1
                       it will be normalised.
@@ -74,6 +78,8 @@ class ComputeCouplingNHMesh : public Compute {
   int nmax;             // Max. number of atoms
   double *therm_sum;    // Sums of dofs controlled by each thermostat
   double **coupling;    // particle-thermostat couplings
+
+  int fill_remainder;
 
   enum {
     GRID,
@@ -142,6 +148,10 @@ E: Compute nhmesh/coupling grid variables must be equal style
 Self-explanatory.
 
 E: Compute nhmesh/coupling point variables must return a vector of length 4
+
+Self-explanatory.
+
+E: Unknown decay style for nhmesh/coupling points command
 
 Self-explanatory.
 

@@ -43,6 +43,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
   n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
   if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
 
+  fill_remainder = 0;
   if (strcmp(arg[4], "grid") == 0) {
     heuristic = GRID;
     if (narg < 14) error->all(FLERR,"Illegal compute nhmesh/coupling command");
@@ -92,6 +93,11 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     points_anyvar = 0;
     int iarg = 5;
     int j,ivar;
+    fill_remainder = 1;
+    if (strcmp(arg[iarg], "nofill") == 0) {
+      fill_remainder = 0;
+      iarg++;
+    }
     for (i=0; i<n_thermostats-1; i++) {
       if (narg < iarg+4)
         error->all(FLERR,"Illegal compute nhmesh/coupling command");
@@ -107,18 +113,23 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
                 "Compute nhmesh/coupling points variables must be equal style");
           points_str[i][j] = utils::strdup(arg[iarg++]);
         } else {
-          points_varflag[i][j] = 0;
-          points[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
           points_str[i][j] = nullptr;
+          points_varflag[i][j] = 0;
+          if (strcmp(arg[iarg], "NULL") == 0) {
+            points[i][j] = NAN;
+            iarg++;
+          } else points[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
         }
       }
     }
-    if (narg < iarg+1)
+
+    if (narg == iarg) points_decay = LINEAR;
+    else if (narg != iarg+1)
       error->all(FLERR,"Illegal compute nhmesh/coupling command");
-    if (strcmp(arg[iarg],"linear")==0) points_decay = LINEAR;
+    else if (strcmp(arg[iarg],"linear")==0) points_decay = LINEAR;
     else if (strcmp(arg[iarg],"gaussian")==0) points_decay = GAUSSIAN;
     else if (strcmp(arg[iarg],"exp")==0) points_decay = EXP;
-    else error->all(FLERR,"Illegal compute nhmesh/coupling command");
+    else error->all(FLERR,"Unknown decay style for nhmesh/coupling points command");
   } else error->all(FLERR,"Unknown nhmesh/coupling heuristic");
 
   peratom_flag = 1;
@@ -208,9 +219,12 @@ double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
   switch (heuristic) {
     case POINTS:
       {
-        if (j == n_thermostats-1) return 0;
+        if (fill_remainder && j == n_thermostats-1) return 0;
         double pi[3];
-        for (int i = 0; i < 3; i++) pi[i] = points[j][i];
+        for (int i = 0; i < 3; i++) {
+          if (std::isnan(points[j][i])) pi[i] = x[i];
+          else pi[i] = points[j][i];
+        }
         domain->remap_near(pi, x);
         double r2,dx,dy,dz;
         dx = fabs(x[0]-pi[0]);
@@ -280,13 +294,14 @@ void ComputeCouplingNHMesh::compute_peratom()
   for (i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       wt_sum = 0;
+      double * __restrict ci = coupling[i];
       for (j = 0; j < n_thermostats; j++) {
-        coupling[i][j] = calc_weight(x[i], j);
-        wt_sum += coupling[i][j];
+        ci[j] = calc_weight(x[i], j);
+        wt_sum += ci[j];
       }
       if (wt_sum > 1) {
         for (j = 0; j < n_thermostats; j++) coupling[i][j] /= wt_sum;
-      } else if (heuristic==POINTS && wt_sum < 1) {
+      } else if (fill_remainder && wt_sum < 1) {
         coupling[i][n_thermostats-1] = 1.0-wt_sum;
       }
       for (j = 0; j < n_thermostats; j++) local_sum[j] += coupling[i][j];
