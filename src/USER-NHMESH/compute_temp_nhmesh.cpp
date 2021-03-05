@@ -32,10 +32,7 @@ ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg != 4) error->all(FLERR,"Illegal compute temp/nhmesh command");
 
-  n_thermostats = utils::inumeric(FLERR,arg[3],false,lmp);
-  if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
-
-  idcoupling = utils::strdup(arg[4]);
+  idcoupling = utils::strdup(arg[3]);
 
   int icoupling = modify->find_compute(idcoupling);
   if (icoupling < 0)

@@ -162,8 +162,8 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
   id_temp = new char[tcmd.size()+1];
   strcpy(id_temp, tcmd.c_str());
 
-  tcmd += fmt::format(" {} temp/nhmesh {} {}",
-      group->names[igroup], n_thermostats, id_coupling);
+  tcmd += fmt::format(" {} temp/nhmesh {}",
+      group->names[igroup], id_coupling);
   modify->add_compute(tcmd);
   tcomputeflag = 1;
 }
@@ -257,12 +257,8 @@ void FixNHMesh::setup(int /*vflag*/)
 
   // masses and initial forces on thermostat variables
 
-  for (i = 0; i < n_thermostats; i++) {
+  for (i = 0; i < n_thermostats; i++)
     eta_mass[i] = tdof[i] * boltz * t_target[i] / (t_freq[i]*t_freq[i]);
-    if (mesh_coupling_flag)
-      for (int j = 0; j < n_thermostats; j++)
-        eta_mass[i] += mesh_coupling[i][j] * boltz * t_target[i];
-  }
 
   for (i = 0; i < n_thermostats; i++) {
     eta_dotdot[i] = ke_current[i] - tdof[i] * boltz * t_target[i];
@@ -329,9 +325,6 @@ void FixNHMesh::final_integrate()
 {
   // NOTE: should temp be recalculated after position updates???
   nve_v();
-
-  // compute new T after velocities rescaled by nh_v_press()
-  // compute appropriately coupled elements of mvv_current
 
   // t_current = temperature->compute_scalar();
   // tdof = temperature->dof;
@@ -815,6 +808,8 @@ void FixNHMesh::nhmesh_v_temp()
   } else if (which == BIAS) {
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
+        if (rmass) massone = rmass[i];
+        else massone = mass[type[i]];
         temperature->remove_bias(i,v[i]);
         fac = 0;
         for (int j = 0; j < n_thermostats; j++)
