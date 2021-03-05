@@ -41,6 +41,8 @@ ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char *
   tempflag = 1;
   tempbias = 1;
 
+  idcoupling = utils::strdup(arg[3]);
+
   int icoupling = modify->find_compute(idcoupling);
   if (icoupling < 0)
     error->all(FLERR,"Compute ID for temp/nhmesh/profile does not exist");
@@ -67,47 +69,47 @@ ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char *
 
   int iarg = 7;
   if (strcmp(arg[iarg],"x") == 0) {
-    if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     iarg += 2;
   } else if (strcmp(arg[iarg],"y") == 0) {
-    if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     nbiny = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     iarg += 2;
   } else if (strcmp(arg[iarg],"z") == 0) {
-    if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     if (domain->dimension == 2)
-      error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
+      error->all(FLERR,"Compute temp/nhmesh/profile cannot bin z for 2d systems");
     nbinz = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     iarg += 2;
   } else if (strcmp(arg[iarg],"xy") == 0) {
-    if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     nbiny = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
     iarg += 3;
   } else if (strcmp(arg[iarg],"yz") == 0) {
-    if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     if (domain->dimension == 2)
-      error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
+      error->all(FLERR,"Compute temp/nhmesh/profile cannot bin z for 2d systems");
     nbiny = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     nbinz = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
     iarg += 3;
   } else if (strcmp(arg[iarg],"xz") == 0) {
-    if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     if (domain->dimension == 2)
-      error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
+      error->all(FLERR,"Compute temp/nhmesh/profile cannot bin z for 2d systems");
     nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     nbinz = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
     iarg += 3;
   } else if (strcmp(arg[iarg],"xyz") == 0) {
-    if (iarg+4 > narg) error->all(FLERR,"Illegal compute temp/profile command");
+    if (iarg+4 > narg) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
     if (domain->dimension == 2)
-      error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
+      error->all(FLERR,"Compute temp/nhmesh/profile cannot bin z for 2d systems");
     nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
     nbiny = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
     nbinz = utils::inumeric(FLERR,arg[iarg+3],false,lmp);
     iarg += 4;
-  } else error->all(FLERR,"Illegal compute temp/profile command");
+  } else error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
 
   // optional keywords
 
@@ -116,21 +118,21 @@ ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char *
   while (iarg < narg) {
     if (strcmp(arg[iarg],"out") == 0) {
       if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute temp/profile command");
+        error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
       if (strcmp(arg[iarg+1],"tensor") == 0) outflag = TENSOR;
       else if (strcmp(arg[iarg+1],"bin") == 0) outflag = BIN;
-      else error->all(FLERR,"Illegal compute temp/profile command");
+      else error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
       iarg += 2;
-    } else error->all(FLERR,"Illegal compute temp/profile command");
+    } else error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
   }
 
   // setup
 
   nbins = nbinx*nbiny*nbinz;
-  if (nbins <= 0) error->all(FLERR,"Illegal compute temp/profile command");
+  if (nbins <= 0) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
 
-  memory->create(vbin,nbins,ncount,"temp/profile:vbin");
-  memory->create(binave,nbins,ncount,"temp/profile:binave");
+  memory->create(vbin,nbins,ncount,"temp/nhmesh/profile:vbin");
+  memory->create(binave,nbins,ncount,"temp/nhmesh/profile:binave");
 
   if (outflag == TENSOR) {
     vector_flag = 1;
@@ -150,9 +152,9 @@ ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char *
     size_array_rows = nbins;
     size_array_cols = 2;
     extarray = 0;
-    memory->create(tbin,nbins,"temp/profile:tbin");
-    memory->create(tbinall,nbins,"temp/profile:tbinall");
-    memory->create(array,nbins,2,"temp/profile:array");
+    memory->create(tbin,nbins,"temp/nhmesh/profile:tbin");
+    memory->create(tbinall,nbins,"temp/nhmesh/profile:tbinall");
+    memory->create(array,nbins,2,"temp/nhmesh/profile:array");
     array_compute_fn = &ComputeTempProfileNHMesh::compute_array_bin;
     error->warning(FLERR,"Compute temp/nhmesh/profile can't be used as the "
                       "temperature compute for fix temp/nhmesh with out bin.");
@@ -599,7 +601,7 @@ void ComputeTempProfileNHMesh::bin_assign()
   if (atom->nmax > maxatom) {
     maxatom = atom->nmax;
     memory->destroy(bin);
-    memory->create(bin,maxatom,"temp/profile:bin");
+    memory->create(bin,maxatom,"temp/nhmesh/profile:bin");
   }
 
   // assign each atom to a bin, accounting for PBC

@@ -94,7 +94,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     int iarg = 5;
     int j,ivar;
     fill_remainder = 1;
-    if (strcmp(arg[iarg], "nofill") == 0) {
+    if (iarg < narg && strcmp(arg[iarg], "nofill") == 0) {
       fill_remainder = 0;
       iarg++;
     }
@@ -301,9 +301,8 @@ void ComputeCouplingNHMesh::compute_peratom()
       }
       if (wt_sum > 1) {
         for (j = 0; j < n_thermostats; j++) coupling[i][j] /= wt_sum;
-      } else if (fill_remainder && wt_sum < 1) {
+      } else if (fill_remainder && wt_sum < 1)
         coupling[i][n_thermostats-1] = 1.0-wt_sum;
-      }
       for (j = 0; j < n_thermostats; j++) local_sum[j] += coupling[i][j];
     } else for (j = 0; j < n_thermostats; j++) coupling[i][j] = 0.0;
   // Calculating sum for each thermostat here to save an extra loop over atoms
