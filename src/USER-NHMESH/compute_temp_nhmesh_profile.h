@@ -13,21 +13,21 @@
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(temp/profile,ComputeTempProfile)
+ComputeStyle(temp/nhmesh/profile,ComputeTempProfileNHMesh)
 
 #else
 
-#ifndef LMP_COMPUTE_TEMP_PROFILE_H
-#define LMP_COMPUTE_TEMP_PROFILE_H
+#ifndef LMP_COMPUTE_TEMP_PROFILE_NHMESH_H
+#define LMP_COMPUTE_TEMP_PROFILE_NHMESH_H
 
 #include "compute.h"
 
 namespace LAMMPS_NS {
 
-class ComputeTempProfile : public Compute {
+class ComputeTempProfileNHMesh : public Compute {
  public:
-  ComputeTempProfile(class LAMMPS *, int, char **);
-  ~ComputeTempProfile();
+  ComputeTempProfileNHMesh(class LAMMPS *, int, char **);
+  ~ComputeTempProfileNHMesh();
   void init();
   void setup();
   double compute_scalar();
@@ -42,7 +42,11 @@ class ComputeTempProfile : public Compute {
   void restore_bias_all();
   double memory_usage();
 
- private:
+ protected:
+  char *idcoupling;
+  class ComputeCouplingNHMesh *coupling;
+  int n_thermostats;
+
   int xflag,yflag,zflag,ncount,outflag;
   int nbinx,nbiny,nbinz,nbins;
   int ivx,ivy,ivz;
@@ -58,10 +62,14 @@ class ComputeTempProfile : public Compute {
   double **vbin,**binave;
   double *tbin,*tbinall;
 
-  void dof_compute();
-  void bin_average();
-  void bin_setup();
-  void bin_assign();
+  void (ComputeTempProfileNHMesh::*array_compute_fn)();
+  virtual void compute_array_bin();
+  virtual void compute_array_ke();
+
+  virtual void dof_compute();
+  virtual void bin_average();
+  virtual void bin_setup();
+  virtual void bin_assign();
 };
 
 }
@@ -77,11 +85,19 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Compute temp/profile cannot use vz for 2d systemx
+E: Compute ID for temp/nhmesh/profile does not exist
 
 Self-explanatory.
 
-E: Compute temp/profile cannot bin z for 2d systems
+E: Invalid coupling compute for temp/nhmesh/profile
+
+Coupling compute must be derived from ComputeCouplingNHMesh.
+
+E: Compute temp/nhmesh/profile cannot use vz for 2d systemx
+
+Self-explanatory.
+
+E: Compute temp/nhmesh/profile cannot bin z for 2d systems
 
 Self-explanatory.
 
@@ -89,5 +105,12 @@ E: Temperature compute degrees of freedom < 0
 
 This should not happen if you are calculating the temperature
 on a valid set of atoms.
+
+W: Compute temp/nhmesh/profile can't be used as the temperature compute for fix
+   temp/nhmesh with out bin.
+
+The out bin flag change the compute_array function, making it return results
+that are incompatible with fix temp/nhmesh. This could cause undefined
+behaviour if used as the temperature compute for fix temp/nhmesh.
 
 */

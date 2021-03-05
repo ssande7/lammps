@@ -11,7 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_temp_profile.h"
+#include "compute_temp_nhmesh_profile.h"
+#include "compute_coupling_nhmesh_atom.h"
 
 #include <cstring>
 #include "atom.h"
@@ -20,6 +21,7 @@
 #include "group.h"
 #include "domain.h"
 #include "memory.h"
+#include "modify.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
@@ -28,20 +30,29 @@ enum{TENSOR,BIN};
 
 /* ---------------------------------------------------------------------- */
 
-ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
+ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
   bin(nullptr), vbin(nullptr), binave(nullptr), tbin(nullptr), tbinall(nullptr)
 {
-  if (narg < 7) error->all(FLERR,"Illegal compute temp/profile command");
+  if (narg < 8) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
 
   scalar_flag = 1;
   extscalar = 0;
   tempflag = 1;
   tempbias = 1;
 
-  xflag = utils::inumeric(FLERR,arg[3],false,lmp);
-  yflag = utils::inumeric(FLERR,arg[4],false,lmp);
-  zflag = utils::inumeric(FLERR,arg[5],false,lmp);
+  int icoupling = modify->find_compute(idcoupling);
+  if (icoupling < 0)
+    error->all(FLERR,"Compute ID for temp/nhmesh/profile does not exist");
+  Compute *comp = modify->compute[icoupling];
+  coupling = dynamic_cast<ComputeCouplingNHMesh *>(comp);
+  if (coupling == nullptr)
+    error->all(FLERR,"Invalid coupling compute for temp/nhmesh/profile");
+  n_thermostats = coupling->get_n_thermostats();
+
+  xflag = utils::inumeric(FLERR,arg[4],false,lmp);
+  yflag = utils::inumeric(FLERR,arg[5],false,lmp);
+  zflag = utils::inumeric(FLERR,arg[6],false,lmp);
   if (zflag && domain->dimension == 2)
     error->all(FLERR,"Compute temp/profile cannot use vz for 2d systemx");
 
@@ -54,7 +65,7 @@ ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
 
   nbinx = nbiny = nbinz = 1;
 
-  int iarg = 6;
+  int iarg = 7;
   if (strcmp(arg[iarg],"x") == 0) {
     if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
     nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
@@ -126,6 +137,14 @@ ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
     size_vector = 6;
     extvector = 1;
     vector = new double[size_vector];
+
+    array_flag = 1;
+    size_array_rows = n_thermostats;
+    size_array_cols = 6;
+    extarray = 1;
+    memory->create(array,size_array_rows,size_array_cols,
+        "temp/nhmesh/profile:array");
+    array_compute_fn = &ComputeTempProfileNHMesh::compute_array_ke;
   } else {
     array_flag = 1;
     size_array_rows = nbins;
@@ -134,6 +153,9 @@ ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
     memory->create(tbin,nbins,"temp/profile:tbin");
     memory->create(tbinall,nbins,"temp/profile:tbinall");
     memory->create(array,nbins,2,"temp/profile:array");
+    array_compute_fn = &ComputeTempProfileNHMesh::compute_array_bin;
+    error->warning(FLERR,"Compute temp/nhmesh/profile can't be used as the "
+                      "temperature compute for fix temp/nhmesh with out bin.");
   }
 
   maxatom = 0;
@@ -141,22 +163,22 @@ ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-ComputeTempProfile::~ComputeTempProfile()
+ComputeTempProfileNHMesh::~ComputeTempProfileNHMesh()
 {
   memory->destroy(vbin);
   memory->destroy(binave);
   memory->destroy(bin);
+  memory->destroy(array);
   if (outflag == TENSOR) delete [] vector;
   else {
     memory->destroy(tbin);
     memory->destroy(tbinall);
-    memory->destroy(array);
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeTempProfile::init()
+void ComputeTempProfileNHMesh::init()
 {
   dof_compute();
 
@@ -181,7 +203,7 @@ void ComputeTempProfile::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeTempProfile::setup()
+void ComputeTempProfileNHMesh::setup()
 {
   dynamic = 0;
   if (dynamic_user || group->dynamic[igroup]) dynamic = 1;
@@ -190,7 +212,7 @@ void ComputeTempProfile::setup()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeTempProfile::dof_compute()
+void ComputeTempProfileNHMesh::dof_compute()
 {
   adjust_dof_fix();
   natoms_temp = group->count(igroup);
@@ -205,7 +227,7 @@ void ComputeTempProfile::dof_compute()
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeTempProfile::compute_scalar()
+double ComputeTempProfileNHMesh::compute_scalar()
 {
   int ibin;
   double vthermal[3];
@@ -250,7 +272,7 @@ double ComputeTempProfile::compute_scalar()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeTempProfile::compute_vector()
+void ComputeTempProfileNHMesh::compute_vector()
 {
   int i,ibin;
   double vthermal[3];
@@ -295,8 +317,68 @@ void ComputeTempProfile::compute_vector()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeTempProfile::compute_array()
+void ComputeTempProfileNHMesh::compute_array()
 {
+  (this->*array_compute_fn)();
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeTempProfileNHMesh::compute_array_ke() {
+  int i, j, ibin;
+
+  double vthermal[3];
+
+  invoked_vector = update->ntimestep;
+
+  bin_average();
+
+  // TODO: check that this only recalculates once per time step
+  coupling->compute_peratom();
+  double **&couple_mat = coupling->array_atom;
+
+  double **v = atom->v;
+  double *mass = atom->mass;
+  double *rmass = atom->rmass;
+  int *type = atom->type;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  double massone,t[n_thermostats*6];
+  for (j = 0; j < n_thermostats; j++)
+    for (i = 0; i < 6; i++) t[j*6+i] = 0.0;
+
+  for (i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      ibin = bin[i];
+      if (xflag) vthermal[0] = v[i][0] - binave[ibin][ivx];
+      else vthermal[0] = v[i][0];
+      if (yflag) vthermal[1] = v[i][1] - binave[ibin][ivy];
+      else vthermal[1] = v[i][1];
+      if (zflag) vthermal[2] = v[i][2] - binave[ibin][ivz];
+      else vthermal[2] = v[i][2];
+
+      if (rmass) massone = rmass[i];
+      else massone = mass[type[i]];
+      for (j = 0; j < n_thermostats; j++) {
+        t[j*6+0] += couple_mat[i][j] * massone * vthermal[0]*vthermal[0];
+        t[j*6+1] += couple_mat[i][j] * massone * vthermal[1]*vthermal[1];
+        t[j*6+2] += couple_mat[i][j] * massone * vthermal[2]*vthermal[2];
+        t[j*6+3] += couple_mat[i][j] * massone * vthermal[0]*vthermal[1];
+        t[j*6+4] += couple_mat[i][j] * massone * vthermal[0]*vthermal[2];
+        t[j*6+5] += couple_mat[i][j] * massone * vthermal[1]*vthermal[2];
+      }
+    }
+
+  // array[i] = &data[i*n2], n2 = 6, so this reduces the whole array in one call
+  MPI_Allreduce(t,array[0],6*n_thermostats,MPI_DOUBLE,MPI_SUM,world);
+  for (j = 0; j < n_thermostats; j++)
+    for (i = 0; i < 6; i++) array[j][i] *= force->mvv2e;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeTempProfileNHMesh::compute_array_bin() {
   int i,ibin;
   double vthermal[3];
 
@@ -349,7 +431,7 @@ void ComputeTempProfile::compute_array()
    remove velocity bias from atom I to leave thermal velocity
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::remove_bias(int i, double *v)
+void ComputeTempProfileNHMesh::remove_bias(int i, double *v)
 {
   int ibin = bin[i];
   if (xflag) v[0] -= binave[ibin][ivx];
@@ -361,7 +443,7 @@ void ComputeTempProfile::remove_bias(int i, double *v)
    remove velocity bias from atom I to leave thermal velocity
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::remove_bias_thr(int i, double *v, double *)
+void ComputeTempProfileNHMesh::remove_bias_thr(int i, double *v, double *)
 {
   remove_bias(i,v);
 }
@@ -370,7 +452,7 @@ void ComputeTempProfile::remove_bias_thr(int i, double *v, double *)
    remove velocity bias from all atoms to leave thermal velocity
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::remove_bias_all()
+void ComputeTempProfileNHMesh::remove_bias_all()
 {
   double **v = atom->v;
   int *mask = atom->mask;
@@ -391,7 +473,7 @@ void ComputeTempProfile::remove_bias_all()
    assume remove_bias() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::restore_bias(int i, double *v)
+void ComputeTempProfileNHMesh::restore_bias(int i, double *v)
 {
   int ibin = bin[i];
   if (xflag) v[0] += binave[ibin][ivx];
@@ -404,7 +486,7 @@ void ComputeTempProfile::restore_bias(int i, double *v)
    assume remove_bias_thr() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::restore_bias_thr(int i, double *v, double *)
+void ComputeTempProfileNHMesh::restore_bias_thr(int i, double *v, double *)
 {
   restore_bias(i,v);
 }
@@ -414,7 +496,7 @@ void ComputeTempProfile::restore_bias_thr(int i, double *v, double *)
    assume remove_bias_all() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::restore_bias_all()
+void ComputeTempProfileNHMesh::restore_bias_all()
 {
   double **v = atom->v;
   int *mask = atom->mask;
@@ -434,7 +516,7 @@ void ComputeTempProfile::restore_bias_all()
    compute average COM velocity in each bin
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::bin_average()
+void ComputeTempProfileNHMesh::bin_average()
 {
   int i,j,ibin;
 
@@ -499,7 +581,7 @@ void ComputeTempProfile::bin_average()
    set bin sizes, redo if box size changes
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::bin_setup()
+void ComputeTempProfileNHMesh::bin_setup()
 {
   invdelta[0] = nbinx / prd[0];
   invdelta[1] = nbiny / prd[1];
@@ -510,7 +592,7 @@ void ComputeTempProfile::bin_setup()
    assign all atoms to bins
 ------------------------------------------------------------------------- */
 
-void ComputeTempProfile::bin_assign()
+void ComputeTempProfileNHMesh::bin_assign()
 {
   // reallocate bin array if necessary
 
@@ -575,7 +657,7 @@ void ComputeTempProfile::bin_assign()
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeTempProfile::memory_usage()
+double ComputeTempProfileNHMesh::memory_usage()
 {
   double bytes = (double)maxatom * sizeof(int);
   bytes += (double)nbins*ncount * sizeof(double);
