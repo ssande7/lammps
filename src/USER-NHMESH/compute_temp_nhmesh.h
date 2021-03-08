@@ -66,25 +66,13 @@ class ComputeTempNHMesh : public ComputeTemp {
 
 /* ERROR/WARNING messages:
 
-E: Illegal ... command
-
-Self-explanatory.
-
-E: Number of thermostats must be > 0
-
-Self-explanatory.
-
 E: Compute ID for temp/nhmesh does not exist
 
 Self-explanatory.  temp/nhmesh requires a compute that provides
 particle-thermostat couplings
 
-E: Compute doesn't output the correct array size for temp/nhmesh
+E: Invalid coupling compute for temp/nhmesh/profile
 
-Self-explanatory.
-
-E: Temperature compute degrees of freedom < 0
-
-Self-explanatory.
+Coupling compute must be derived from nhmesh/coupling.
 
 */
