@@ -33,13 +33,6 @@ enum{TENSOR,BIN};
 ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char **arg) :
   ComputeTempProfile(lmp, narg-1, arg)
 {
-  if (narg < 8) error->all(FLERR,"Illegal compute temp/nhmesh/profile command");
-
-  scalar_flag = 1;
-  extscalar = 0;
-  tempflag = 1;
-  tempbias = 1;
-
   idcoupling = utils::strdup(arg[narg-1]);
 
   int icoupling = modify->find_compute(idcoupling);
@@ -93,8 +86,7 @@ void ComputeTempProfileNHMesh::compute_array_ke() {
   invoked_vector = update->ntimestep;
 
   bin_average();
-
-  // TODO: check that this only recalculates once per time step
+// TODO: check that this only recalculates once per time step
   coupling->compute_peratom();
   double **&couple_mat = coupling->array_atom;
 

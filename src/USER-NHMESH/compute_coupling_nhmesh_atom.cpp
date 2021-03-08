@@ -84,7 +84,15 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     if (narg < iarg+3)
       error->all(FLERR,"Illegal compute nhmesh/coupling command");
     for (i=0; i<3; i++) {
-      grid_n[i] = utils::inumeric(FLERR,arg[iarg++],false,lmp);
+      int ivar = input->variable->find(arg[iarg]);
+      if (ivar >= 0) {
+        if (!input->variable->equalstyle(ivar))
+          error->all(FLERR,
+              "Compute nhmesh/coupling grid variables must be equal style");
+        // TODO: evaluate during run to allow variable volume etc?
+        grid_n[i] = input->variable->compute_equal(ivar);
+        iarg++;
+      } else grid_n[i] = utils::inumeric(FLERR,arg[iarg++],false,lmp);
       n_check *= grid_n[i];
       // Make sure final grid plane isn't a periodic
       // duiplicate of the first if spanning
@@ -98,7 +106,15 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
       if (narg != iarg+3)
         error->all(FLERR,"Illegal compute nhmesh/coupling command");
       for (i=0; i<3; i++) {
-        grid_decay[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+        int ivar = input->variable->find(arg[iarg]);
+        if (ivar >= 0) {
+          if (!input->variable->equalstyle(ivar))
+            error->all(FLERR,
+                "Compute nhmesh/coupling grid variables must be equal style");
+          // TODO: evaluate during run to allow variable volume etc?
+          grid_decay[i] = input->variable->compute_equal(ivar);
+          iarg++;
+        } else grid_decay[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
         if (grid_decay[i] <= 0 || grid_decay[i] > grid_n[i])
           error->all(FLERR,"Illegal grid decay length for nhmesh/coupling");
       }

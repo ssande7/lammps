@@ -13,22 +13,11 @@
 
 /* -------------------------------------------------------------------------
 TODO:
- * strip out barostat
- * change thermostat implementation
- * create compute for temperature in class constructor
- * add thermostat-thermostat coupling + input handling for it
- * handle velocity bias for SLLOD etc.
+ * optimisation
+ * allow creation of thermostats for chaining only, that are in addition to real
+   thermostats and can be coupled. Shouldn't need to handle these outside the
+   fix, so compute temp and compute coupling don't need to know about them.
  * conservation of row sums in coupling matrix handled by conserve compute
-------------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------------
-NOTE:
- * fix_npt inherits FixNH directly, so no need to worry about things done for
-   that
- * temperature of each thermostat comes from compute_temp_nhmesh
- * R matrix (for particle-thermostat couplings) from compute_coupling_nhmesh
- * Needs to perform time integration like fix_nh for proper thermostat
-   "particle" dynamics
 ------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------
@@ -36,9 +25,9 @@ INPUT:
 fix fix-ID grp-ID temp/nhmesh c_couple [t_start] [t_stop] [t_period] kwargs
   * c_couple     = compute that returns the coupling matrix mapping
                    particles to thermostats.
-  * [t_start]    = vector of initial temperatures of length N
-  * [t_stop]     = vector of final temperatures of length N
-  * [t_period]   = vector of coupling time periods of length N
+  * [t_start]    = N initial temperatures, or 'all t_start' for all the same
+  * [t_stop]     = N final temperatures, or 'all t_stop' for all the same
+  * [t_period]   = N coupling time periods or 'all t_period' for all the same
   * kwargs (optional):
      + couple args:
         args     = thermostat-thermostat coupling coefficients, in the format

@@ -83,8 +83,6 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
 
   int iarg = 4, i;
 
-  if (iarg+3*n_thermostats > narg)
-    error->all(FLERR,"Illegal fix temp/nhmesh command");
 
   double t_period[n_thermostats];
   t_start = new double[n_thermostats];
@@ -101,17 +99,53 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
 
   // TODO: accept vectors here
   for (i = 0; i < n_thermostats; i++) {
-    t_start[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
-    t_target[i] = t_start[i];
+    if (iarg+1 > narg)
+      error->all(FLERR,"Illegal fix temp/nhmesh command");
+    if (i == 0 && strcmp(arg[iarg], "all") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal fix temp/nhmesh command");
+      for (; i < n_thermostats; i++) {
+        t_start[i] = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+        t_target[i] = t_start[i];
+      }
+      iarg+=2;
+    } else {
+      t_start[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+      t_target[i] = t_start[i];
+    }
   }
   for (i = 0; i < n_thermostats; i++) {
-    t_stop[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
-    if (t_start[i] <= 0.0 || t_stop[i] <= 0.0)
-      error->all(FLERR,
-                 "Target temperature for fix temp/nhmesh cannot be 0.0");
+    if (iarg+1 > narg)
+      error->all(FLERR,"Illegal fix temp/nhmesh command");
+    if (i == 0 && strcmp(arg[iarg], "all") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal fix temp/nhmesh command");
+      for (; i < n_thermostats; i++) {
+        t_stop[i] = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+        if (t_start[i] <= 0.0 || t_stop[i] <= 0.0)
+          error->all(FLERR,
+                     "Target temperature for fix temp/nhmesh cannot be 0.0");
+      }
+      iarg+=2;
+    } else {
+      t_stop[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+      if (t_start[i] <= 0.0 || t_stop[i] <= 0.0)
+        error->all(FLERR,
+                   "Target temperature for fix temp/nhmesh cannot be 0.0");
+    }
   }
-  for (i = 0; i < n_thermostats; i++)
-    t_period[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+  for (i = 0; i < n_thermostats; i++) {
+    if (iarg+1 > narg)
+      error->all(FLERR,"Illegal fix temp/nhmesh command");
+    if (i == 0 && strcmp(arg[iarg], "all") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal fix temp/nhmesh command");
+      for (; i < n_thermostats; i++) {
+        t_period[i] = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      }
+      iarg += 2;
+    } else t_period[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
+  }
 
   // process keywords
 

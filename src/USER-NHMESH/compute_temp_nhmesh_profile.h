@@ -28,7 +28,7 @@ class ComputeTempProfileNHMesh : public ComputeTempProfile {
  public:
   ComputeTempProfileNHMesh(class LAMMPS *, int, char **);
   ~ComputeTempProfileNHMesh();
-  void compute_array();
+  virtual void compute_array();
 
  protected:
   char *idcoupling;
