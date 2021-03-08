@@ -27,7 +27,9 @@ INPUT:
  * heuristic  = grid args or points args
     + grid xlo xhi ylo yhi zlo zhi nx ny nz decayx decayy decayz
       - xlo, xhi, ylo, yhi, zlo, zhi
-                    = extents of grid
+                    = extents of grid. Replace xlo xhi with span to use
+                    bounding box (at time of creation only, doesn't change as
+                    system progresses.. yet..)
       - nx, ny, nz  = number of thermostats in each direction (min. 1)
       - decayx, decayy, decayz
                     = number of grid points away at which point influence
@@ -93,6 +95,7 @@ class ComputeCouplingNHMesh : public Compute {
   double grid_decay[3];
   double grid_dlength[3];
   double grid_lo[3], grid_hi[3];
+  int grid_span[3];
 
   double **points;
   char ***points_str;

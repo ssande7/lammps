@@ -44,42 +44,61 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
   if (n_thermostats <= 0) error->all(FLERR,"Number of thermostats must be > 0");
 
   fill_remainder = 0;
+  int iarg = 5;
   if (strcmp(arg[4], "grid") == 0) {
     heuristic = GRID;
-    if (narg < 14) error->all(FLERR,"Illegal compute nhmesh/coupling command");
     for (i = 0; i < 3; i++) {
-      int ivar = input->variable->find(arg[5+2*i]);
-      if (ivar >= 0) {
-        if (!input->variable->equalstyle(ivar))
-          error->all(FLERR,
-              "Compute nhmesh/coupling grid variables must be equal style");
-        // TODO: evaluate during run to allow variable volume etc?
-        grid_lo[i] = input->variable->compute_equal(ivar);
-      } else grid_lo[i] = utils::numeric(FLERR,arg[5+2*i],false,lmp);
-      ivar = input->variable->find(arg[6+2*i]);
-      if (ivar >= 0) {
-        if (!input->variable->equalstyle(ivar))
-          error->all(FLERR,
-              "Compute nhmesh/coupling grid variables must be equal style");
-        // TODO: evaluate during run to allow variable volume etc?
-        grid_hi[i] = input->variable->compute_equal(ivar);
-      } grid_hi[i] = utils::numeric(FLERR,arg[6+2*i],false,lmp);
-      if (grid_lo[i] > grid_hi[i])
-        error->all(FLERR,"Illegal grid boundaries for nhmesh/coupling");
+      if (narg < iarg+1)
+        error->all(FLERR,"Illegal compute nhmesh/coupling command");
+      if (strcmp(arg[iarg], "span") == 0) {
+        grid_lo[i] = domain->boxlo[i];
+        grid_hi[i] = domain->boxhi[i];
+        grid_span[i] = 1;
+        iarg++;
+      } else {
+        if (narg < iarg+2)
+          error->all(FLERR,"Illegal compute nhmesh/coupling command");
+        int ivar = input->variable->find(arg[iarg]);
+        if (ivar >= 0) {
+          if (!input->variable->equalstyle(ivar))
+            error->all(FLERR,
+                "Compute nhmesh/coupling grid variables must be equal style");
+          // TODO: evaluate during run to allow variable volume etc?
+          grid_lo[i] = input->variable->compute_equal(ivar);
+        } else grid_lo[i] = utils::numeric(FLERR,arg[iarg],false,lmp);
+        ivar = input->variable->find(arg[iarg+1]);
+        if (ivar >= 0) {
+          if (!input->variable->equalstyle(ivar))
+            error->all(FLERR,
+                "Compute nhmesh/coupling grid variables must be equal style");
+          // TODO: evaluate during run to allow variable volume etc?
+          grid_hi[i] = input->variable->compute_equal(ivar);
+        } grid_hi[i] = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+        if (grid_lo[i] > grid_hi[i])
+          error->all(FLERR,"Illegal grid boundaries for nhmesh/coupling");
+        grid_span[i] = 0;
+        iarg += 2;
+      }
     }
     int n_check = 1;
+    if (narg < iarg+3)
+      error->all(FLERR,"Illegal compute nhmesh/coupling command");
     for (i=0; i<3; i++) {
-      grid_n[i] = utils::inumeric(FLERR,arg[11+i],false,lmp);
+      grid_n[i] = utils::inumeric(FLERR,arg[iarg++],false,lmp);
       n_check *= grid_n[i];
+      // Make sure final grid plane isn't a periodic
+      // duiplicate of the first if spanning
+      if (domain->periodicity[i] && grid_span[i] && grid_n[i] > 1)
+        grid_hi[i] = grid_n[i] * grid_hi[i]/(grid_n[i]+1);
     }
     if (n_thermostats != n_check)
       error->all(FLERR,"Illegal grid dimensions for nhmesh/coupling - "
                        "nx*ny*nz must equal N");
-    if (narg > 14) {
-      if (narg != 17)
+    if (narg > iarg+1) {
+      if (narg != iarg+3)
         error->all(FLERR,"Illegal compute nhmesh/coupling command");
       for (i=0; i<3; i++) {
-        grid_decay[i] = utils::numeric(FLERR,arg[14+i],false,lmp);
+        grid_decay[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
         if (grid_decay[i] <= 0 || grid_decay[i] > grid_n[i])
           error->all(FLERR,"Illegal grid decay length for nhmesh/coupling");
       }
@@ -91,7 +110,6 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     points_str = new char**[n_thermostats-1];
     points_varflag = new int*[n_thermostats-1];
     points_anyvar = 0;
-    int iarg = 5;
     int j,ivar;
     fill_remainder = 1;
     if (iarg < narg && strcmp(arg[iarg], "nofill") == 0) {
@@ -130,6 +148,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     else if (strcmp(arg[iarg],"gaussian")==0) points_decay = GAUSSIAN;
     else if (strcmp(arg[iarg],"exp")==0) points_decay = EXP;
     else error->all(FLERR,"Unknown decay style for nhmesh/coupling points command");
+    iarg++;
   } else error->all(FLERR,"Unknown nhmesh/coupling heuristic");
 
   peratom_flag = 1;
