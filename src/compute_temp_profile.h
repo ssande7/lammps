@@ -27,22 +27,22 @@ namespace LAMMPS_NS {
 class ComputeTempProfile : public Compute {
  public:
   ComputeTempProfile(class LAMMPS *, int, char **);
-  ~ComputeTempProfile();
-  void init();
-  void setup();
-  double compute_scalar();
-  void compute_vector();
-  void compute_array();
+  virtual ~ComputeTempProfile();
+  virtual void init();
+  virtual void setup();
+  virtual double compute_scalar();
+  virtual void compute_vector();
+  virtual void compute_array();
 
-  void remove_bias(int, double *);
-  void remove_bias_thr(int, double *, double *);
-  void remove_bias_all();
-  void restore_bias(int, double *);
-  void restore_bias_thr(int, double *, double *);
-  void restore_bias_all();
-  double memory_usage();
+  virtual void remove_bias(int, double *);
+  virtual void remove_bias_thr(int, double *, double *);
+  virtual void remove_bias_all();
+  virtual void restore_bias(int, double *);
+  virtual void restore_bias_thr(int, double *, double *);
+  virtual void restore_bias_all();
+  virtual double memory_usage();
 
- private:
+ protected:
   int xflag,yflag,zflag,ncount,outflag;
   int nbinx,nbiny,nbinz,nbins;
   int ivx,ivy,ivz;
