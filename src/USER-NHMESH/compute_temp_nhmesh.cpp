@@ -28,11 +28,9 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  ComputeTemp(lmp, narg-1, arg)
 {
-  if (narg != 4) error->all(FLERR,"Illegal compute temp/nhmesh command");
-
-  idcoupling = utils::strdup(arg[3]);
+  idcoupling = utils::strdup(arg[narg-1]);
 
   int icoupling = modify->find_compute(idcoupling);
   if (icoupling < 0)
@@ -43,16 +41,11 @@ ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"Invalid coupling compute for temp/nhmesh");
   n_thermostats = coupling->get_n_thermostats();
 
-  scalar_flag = vector_flag = array_flag = 1;
-  size_vector = 6;
+  array_flag = 1;
   size_array_cols = 6;
   size_array_rows = n_thermostats;
-  extscalar = 0;
-  extvector = 1;
   extarray = 1;
-  tempflag = 1;
 
-  vector = new double[size_vector];
   memory->create(array,size_array_rows,size_array_cols,"temp/nhmesh:array");
 }
 
@@ -61,108 +54,9 @@ ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
 ComputeTempNHMesh::~ComputeTempNHMesh()
 {
   if (!copymode) {
-    delete [] vector;
     delete [] idcoupling;
     memory->destroy(array);
   }
-}
-
-/* ---------------------------------------------------------------------- */
-
-void ComputeTempNHMesh::init()
-{
-  dof_compute();
-}
-
-/* ---------------------------------------------------------------------- */
-
-void ComputeTempNHMesh::setup()
-{
-  dynamic = 0;
-  if (dynamic_user || group->dynamic[igroup]) dynamic = 1;
-  dof_compute();
-}
-
-/* ---------------------------------------------------------------------- */
-
-void ComputeTempNHMesh::dof_compute()
-{
-  adjust_dof_fix();
-  natoms_temp = group->count(igroup);
-  dof = domain->dimension * natoms_temp;
-  dof -= extra_dof + fix_dof;
-  if (dof > 0.0) tfactor = force->mvv2e / (dof * force->boltz);
-  else tfactor = 0.0;
-}
-
-/* ---------------------------------------------------------------------- */
-
-double ComputeTempNHMesh::compute_scalar()
-{
-  invoked_scalar = update->ntimestep;
-
-  double **v = atom->v;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double t = 0.0;
-
-  // assumes sum of couplings for each atom is 1
-  if (rmass) {
-    for (int i = 0; i < nlocal; i++)
-      if (mask[i] & groupbit)
-        t += (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]) * rmass[i];
-  } else {
-    for (int i = 0; i < nlocal; i++)
-      if (mask[i] & groupbit)
-        t += (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]) *
-          mass[type[i]];
-  }
-
-  MPI_Allreduce(&t,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
-  if (dynamic) dof_compute();
-  if (dof < 0.0 && natoms_temp > 0.0)
-    error->all(FLERR,"Temperature compute degrees of freedom < 0");
-  scalar *= tfactor;
-  return scalar;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void ComputeTempNHMesh::compute_vector()
-{
-  int i;
-
-  invoked_vector = update->ntimestep;
-
-  double **v = atom->v;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double massone,t[6];
-  for (i = 0; i < 6; i++) t[i] = 0.0;
-
-  // assumes sum of couplings for each atom is 1
-  for (i = 0; i < nlocal; i++)
-    if (mask[i] & groupbit) {
-      if (rmass) massone = rmass[i];
-      else massone = mass[type[i]];
-      t[0] += massone * v[i][0]*v[i][0];
-      t[1] += massone * v[i][1]*v[i][1];
-      t[2] += massone * v[i][2]*v[i][2];
-      t[3] += massone * v[i][0]*v[i][1];
-      t[4] += massone * v[i][0]*v[i][2];
-      t[5] += massone * v[i][1]*v[i][2];
-    }
-
-  MPI_Allreduce(t,vector,6,MPI_DOUBLE,MPI_SUM,world);
-  for (i = 0; i < 6; i++) vector[i] *= force->mvv2e;
 }
 
 /* ---------------------------------------------------------------------- */

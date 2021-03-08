@@ -20,56 +20,25 @@ ComputeStyle(temp/nhmesh/profile,ComputeTempProfileNHMesh)
 #ifndef LMP_COMPUTE_TEMP_PROFILE_NHMESH_H
 #define LMP_COMPUTE_TEMP_PROFILE_NHMESH_H
 
-#include "compute.h"
+#include "compute_temp_profile.h"
 
 namespace LAMMPS_NS {
 
-class ComputeTempProfileNHMesh : public Compute {
+class ComputeTempProfileNHMesh : public ComputeTempProfile {
  public:
   ComputeTempProfileNHMesh(class LAMMPS *, int, char **);
   ~ComputeTempProfileNHMesh();
-  void init();
-  void setup();
-  double compute_scalar();
-  void compute_vector();
   void compute_array();
-
-  void remove_bias(int, double *);
-  void remove_bias_thr(int, double *, double *);
-  void remove_bias_all();
-  void restore_bias(int, double *);
-  void restore_bias_thr(int, double *, double *);
-  void restore_bias_all();
-  double memory_usage();
 
  protected:
   char *idcoupling;
   class ComputeCouplingNHMesh *coupling;
   int n_thermostats;
 
-  int xflag,yflag,zflag,ncount,outflag;
-  int nbinx,nbiny,nbinz,nbins;
-  int ivx,ivy,ivz;
-  double tfactor;
-
-  int box_change,triclinic;
-  int *periodicity;
-  double *boxlo,*boxhi,*prd;
-  double invdelta[3];
-
-  int maxatom;
-  int *bin;
-  double **vbin,**binave;
-  double *tbin,*tbinall;
-
   void (ComputeTempProfileNHMesh::*array_compute_fn)();
   virtual void compute_array_bin();
   virtual void compute_array_ke();
 
-  virtual void dof_compute();
-  virtual void bin_average();
-  virtual void bin_setup();
-  virtual void bin_assign();
 };
 
 }

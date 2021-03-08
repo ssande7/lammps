@@ -37,18 +37,14 @@ ComputeStyle(temp/nhmesh,ComputeTempNHMesh)
 #ifndef LMP_COMPUTE_TEMP_NHMESH_H
 #define LMP_COMPUTE_TEMP_NHMESH_H
 
-#include "compute.h"
+#include "compute_temp.h"
 
 namespace LAMMPS_NS {
 
-class ComputeTempNHMesh : public Compute {
+class ComputeTempNHMesh : public ComputeTemp {
  public:
   ComputeTempNHMesh(class LAMMPS *, int, char **);
   virtual ~ComputeTempNHMesh();
-  void init();
-  void setup();
-  virtual double compute_scalar();
-  virtual void compute_vector();
   virtual void compute_array();
 
  protected:
@@ -61,7 +57,6 @@ class ComputeTempNHMesh : public Compute {
 
   int n_thermostats;    // Number of thermostats controlling the atoms
 
-  virtual void dof_compute();
 };
 
 }
