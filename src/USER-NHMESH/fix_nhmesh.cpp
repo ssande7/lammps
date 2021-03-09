@@ -188,18 +188,6 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
   eta_mass = new double[n_thermostats];
 
   size_vector = 4*n_thermostats;
-
-  // Create new temperature compute
-  // id = fix-ID + _temp
-  // change this if other temperature computes become possible in future
-  std::string tcmd = id + std::string("_temp");
-  id_temp = new char[tcmd.size()+1];
-  strcpy(id_temp, tcmd.c_str());
-
-  tcmd += fmt::format(" {} temp/nhmesh {}",
-      group->names[igroup], id_coupling);
-  modify->add_compute(tcmd);
-  tcomputeflag = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -357,11 +345,11 @@ void FixNHMesh::initial_integrate(int /*vflag*/)
 
 void FixNHMesh::final_integrate()
 {
-  // NOTE: should temp be recalculated after position updates???
   nve_v();
 
-  // t_current = temperature->compute_scalar();
-  // tdof = temperature->dof;
+  // Update temperature
+  // This also recomputes the coupling matrix based on new x values, and
+  // accounting for reneighbouring, which is needed for temp_integrate()
   compute_temp_current();
 
   // update eta_dot
@@ -859,7 +847,7 @@ void FixNHMesh::nhmesh_v_temp()
       }
     }
   }
-  // printf("%g\n", ke_local[0]);
+
   MPI_Allreduce(ke_local,ke_current,n_thermostats,MPI_DOUBLE,MPI_SUM,world);
   for (int i = 0; i < n_thermostats; i++) {
     ke_current[i] *= force->mvv2e;
