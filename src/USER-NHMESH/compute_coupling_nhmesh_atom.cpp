@@ -97,7 +97,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
       // Make sure final grid plane isn't a periodic
       // duiplicate of the first if spanning
       if (domain->periodicity[i] && grid_span[i] && grid_n[i] > 1)
-        grid_hi[i] = grid_n[i] * grid_hi[i]/(grid_n[i]+1);
+        grid_hi[i] = (grid_n[i]-1) * grid_hi[i]/grid_n[i];
     }
     if (n_thermostats != n_check)
       error->all(FLERR,"Illegal grid dimensions for nhmesh/coupling - "
@@ -240,8 +240,13 @@ void ComputeCouplingNHMesh::update_heuristics() {
         gid[0] = j / (grid_n[1]*grid_n[2]);
         gid[1] = (j - gid[0]*grid_n[1]*grid_n[2]) / grid_n[2];
         gid[2] = j - gid[0]*grid_n[1]*grid_n[2] - gid[1]*grid_n[2];
-        for (int i = 0; i < 3; i++)
-          grid_pts[j][i] = grid_lo[i]+gid[i]*(grid_hi[i]-grid_lo[i])/grid_n[i];
+        for (int i = 0; i < 3; i++) {
+          if (grid_n[i] > 1)
+            grid_pts[j][i] = grid_lo[i] + gid[i]*
+              (grid_hi[i]-grid_lo[i])/(grid_n[i]-1);
+          else
+            grid_pts[j][i] = grid_lo[i];
+        }
       }
       break;
   }

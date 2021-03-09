@@ -89,8 +89,9 @@ void ComputeTempDeformNHMesh::compute_array()
   double *h_rate = domain->h_rate;
   double *h_ratelo = domain->h_ratelo;
 
-  double massone,t[6];
-  for (int i = 0; i < 6; i++) t[i] = 0.0;
+  double massone,t[n_thermostats*6];
+  for (int j = 0; j < n_thermostats; j++)
+    for (int i = 0; i < 6; i++) t[j*6+i] = 0.0;
 
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
@@ -106,12 +107,12 @@ void ComputeTempDeformNHMesh::compute_array()
       if (rmass) massone = rmass[i];
       else massone = mass[type[i]];
       for (int j = 0; j < n_thermostats; j++) {
-        t[0] += couple_mat[i][j] * massone * vthermal[0]*vthermal[0];
-        t[1] += couple_mat[i][j] * massone * vthermal[1]*vthermal[1];
-        t[2] += couple_mat[i][j] * massone * vthermal[2]*vthermal[2];
-        t[3] += couple_mat[i][j] * massone * vthermal[0]*vthermal[1];
-        t[4] += couple_mat[i][j] * massone * vthermal[0]*vthermal[2];
-        t[5] += couple_mat[i][j] * massone * vthermal[1]*vthermal[2];
+        t[j*6+0] += couple_mat[i][j] * massone * vthermal[0]*vthermal[0];
+        t[j*6+1] += couple_mat[i][j] * massone * vthermal[1]*vthermal[1];
+        t[j*6+2] += couple_mat[i][j] * massone * vthermal[2]*vthermal[2];
+        t[j*6+3] += couple_mat[i][j] * massone * vthermal[0]*vthermal[1];
+        t[j*6+4] += couple_mat[i][j] * massone * vthermal[0]*vthermal[2];
+        t[j*6+5] += couple_mat[i][j] * massone * vthermal[1]*vthermal[2];
       }
     }
 

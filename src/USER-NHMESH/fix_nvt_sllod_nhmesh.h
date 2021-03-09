@@ -33,7 +33,7 @@ class FixNVTSllodNHMesh : public FixNHMesh {
  private:
   int nondeformbias;
 
-  void nh_v_temp();
+  void nhmesh_v_temp();
 };
 
 }

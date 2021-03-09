@@ -82,7 +82,7 @@ void FixNVTSllodNHMesh::init()
    perform half-step scaling of velocities
 -----------------------------------------------------------------------*/
 
-void FixNVTSllodNHMesh::nh_v_temp()
+void FixNVTSllodNHMesh::nhmesh_v_temp()
 {
   // remove and restore bias = streaming velocity = Hrate*lamda + Hratelo
   // thermostat thermal velocity only
@@ -119,12 +119,15 @@ void FixNVTSllodNHMesh::nh_v_temp()
       vdelu[1] = h_two[1]*v[i][1] + h_two[3]*v[i][2];
       vdelu[2] = h_two[2]*v[i][2];
       temperature->remove_bias(i,v[i]);
-      v[i][0] = v[i][0]*fac - dthalf*vdelu[0];
-      v[i][1] = v[i][1]*fac - dthalf*vdelu[1];
-      v[i][2] = v[i][2]*fac - dthalf*vdelu[2];
+      v[i][0] = v[i][0]*fac;
+      v[i][1] = v[i][1]*fac;
+      v[i][2] = v[i][2]*fac;
       for (int j = 0; j < n_thermostats; j++)
         ke_local[j] += coupling->array_atom[i][j] * massone *
           (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]);
+      v[i][0] -= dthalf*vdelu[0];
+      v[i][1] -= dthalf*vdelu[1];
+      v[i][2] -= dthalf*vdelu[2];
       temperature->restore_bias(i,v[i]);
     }
   }
