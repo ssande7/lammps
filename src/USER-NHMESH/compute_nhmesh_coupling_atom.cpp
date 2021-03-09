@@ -123,17 +123,17 @@ ComputeNHMeshCouplingAtom::ComputeNHMeshCouplingAtom(LAMMPS *lmp, int narg, char
     memory->create(grid_pts,n_thermostats,3,"nhmesh/coupling/atom:grid_pts");
   } else if (strcmp(arg[4], "points") == 0) {
     heuristic = POINTS;
-    memory->create(points,n_thermostats-1,4,"nhmesh/coupling/atom:points");
-    points_str = new char**[n_thermostats-1];
-    points_varflag = new int*[n_thermostats-1];
-    points_anyvar = 0;
-    int j,ivar;
     fill_remainder = 1;
     if (iarg < narg && strcmp(arg[iarg], "nofill") == 0) {
       fill_remainder = 0;
       iarg++;
     }
-    for (i=0; i<n_thermostats-1; i++) {
+    memory->create(points,n_thermostats-fill_remainder,4,"nhmesh/coupling/atom:points");
+    points_str = new char**[n_thermostats-fill_remainder];
+    points_varflag = new int*[n_thermostats-fill_remainder];
+    points_anyvar = 0;
+    int j,ivar;
+    for (i=0; i<n_thermostats-fill_remainder; i++) {
       if (narg < iarg+4)
         error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
       points_varflag[i] = new int[4];
@@ -151,6 +151,8 @@ ComputeNHMeshCouplingAtom::ComputeNHMeshCouplingAtom(LAMMPS *lmp, int narg, char
           points_str[i][j] = nullptr;
           points_varflag[i][j] = 0;
           if (strcmp(arg[iarg], "NULL") == 0) {
+            if (j == 3) error->all(FLERR,"Compute nhmesh/coupling/atom decay "
+                "radii can not be NULL");
             points[i][j] = NAN;
             iarg++;
           } else points[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
@@ -188,7 +190,7 @@ ComputeNHMeshCouplingAtom::~ComputeNHMeshCouplingAtom()
       memory->destroy(grid_pts);
     } else if (heuristic == POINTS) {
       memory->destroy(points);
-      for (int i = 0; i < n_thermostats-1; i++) {
+      for (int i = 0; i < n_thermostats-fill_remainder; i++) {
         for (int j = 0; j < 4; j++)
           if (points_str[i][j]) delete [] points_str[i][j];
         delete [] points_str[i];
@@ -222,7 +224,7 @@ void ComputeNHMeshCouplingAtom::update_heuristics() {
       if (points_anyvar) {
         double pt_var;
         int ivar;
-        for (int i=0; i<n_thermostats-1; i++)
+        for (int i=0; i<n_thermostats-fill_remainder; i++)
           for (int j = 0; j < 4; j++) {
             if (points_varflag[i][j]) {
               ivar = input->variable->find(points_str[i][j]);

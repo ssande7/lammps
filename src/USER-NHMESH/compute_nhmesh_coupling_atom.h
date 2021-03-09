@@ -153,7 +153,7 @@ E: Compute nhmesh/coupling/atom grid variables must be equal style
 
 Self-explanatory.
 
-E: Compute nhmesh/coupling/atom point variables must return a vector of length 4
+E: Compute nhmesh/coupling/atom decay radii can not be NULL
 
 Self-explanatory.
 
