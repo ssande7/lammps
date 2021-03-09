@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_temp_nhmesh.h"
-#include "compute_coupling_nhmesh_atom.h"
+#include "compute_nhmesh_coupling_atom.h"
 
 #include "atom.h"
 #include "update.h"
@@ -36,7 +36,7 @@ ComputeTempNHMesh::ComputeTempNHMesh(LAMMPS *lmp, int narg, char **arg) :
   if (icoupling < 0)
     error->all(FLERR,"Compute ID for temp/nhmesh does not exist");
   Compute *comp = modify->compute[icoupling];
-  coupling = dynamic_cast<ComputeCouplingNHMesh *>(comp);
+  coupling = dynamic_cast<ComputeNHMeshCouplingAtom *>(comp);
   if (coupling == nullptr)
     error->all(FLERR,"Invalid coupling compute for temp/nhmesh");
   n_thermostats = coupling->get_n_thermostats();

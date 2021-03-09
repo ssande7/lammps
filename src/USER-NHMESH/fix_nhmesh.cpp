@@ -24,7 +24,7 @@
 #include "domain.h"
 #include "memory.h"
 #include "error.h"
-#include "compute_coupling_nhmesh_atom.h"
+#include "compute_nhmesh_coupling_atom.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -73,7 +73,7 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
   int icoupling = modify->find_compute(id_coupling);
   if (icoupling < 0)
     error->all(FLERR,"Coupling ID of fix temp/nhmesh doesn't exist");
-  coupling = dynamic_cast<ComputeCouplingNHMesh*>(modify->compute[icoupling]);
+  coupling = dynamic_cast<ComputeNHMeshCouplingAtom*>(modify->compute[icoupling]);
   if (coupling == nullptr)
     error->all(FLERR,"Invalid coupling compute for temp/nhmesh");
 

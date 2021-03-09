@@ -13,7 +13,7 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(nhmesh/nvt/sllod,FixNVTSllodNHMesh)
+FixStyle(nvt/sllod/nhmesh,FixNVTSllodNHMesh)
 
 #else
 
@@ -43,16 +43,16 @@ class FixNVTSllodNHMesh : public FixNHMesh {
 
 /* ERROR/WARNING messages:
 
-E: Temperature for fix nhmesh/nvt/sllod does not have a bias
+E: Temperature for fix nvt/sllod/nhmesh does not have a bias
 
 The specified compute must compute temperature with a bias.
 
-E: Using fix nhmesh/nvt/sllod with inconsistent fix deform remap option
+E: Using fix nvt/sllod/nhmesh with inconsistent fix deform remap option
 
-Fix nhmesh/nvt/sllod requires that deforming atoms have a velocity profile
+Fix nvt/sllod/nhmesh requires that deforming atoms have a velocity profile
 provided by "remap v" as a fix deform option.
 
-E: Using fix nhmesh/nvt/sllod with no fix deform defined
+E: Using fix nvt/sllod/nhmesh with no fix deform defined
 
 Self-explanatory.
 

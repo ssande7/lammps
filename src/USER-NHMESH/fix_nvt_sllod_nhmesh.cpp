@@ -16,7 +16,7 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_nvt_sllod_nhmesh.h"
-#include "compute_coupling_nhmesh_atom.h"
+#include "compute_nhmesh_coupling_atom.h"
 
 #include <cstring>
 #include "math_extra.h"
@@ -47,7 +47,7 @@ FixNVTSllodNHMesh::FixNVTSllodNHMesh(LAMMPS *lmp, int narg, char **arg) :
   id_temp = new char[cmd.size()+1];
   strcpy(id_temp,cmd.c_str());
 
-  cmd+=fmt::format(" {} temp/nhmesh/deform {}",group->names[igroup],id_coupling);
+  cmd+=fmt::format(" {} temp/deform/nhmesh {}",group->names[igroup],id_coupling);
   modify->add_compute(cmd);
   tcomputeflag = 1;
 }
@@ -59,10 +59,10 @@ void FixNVTSllodNHMesh::init()
   FixNHMesh::init();
 
   if (!temperature->tempbias)
-    error->all(FLERR,"Temperature for fix nhmesh/nvt/sllod does not have a bias");
+    error->all(FLERR,"Temperature for fix nvt/sllod/nhmesh does not have a bias");
 
   nondeformbias = 0;
-  if (strcmp(temperature->style,"temp/nhmesh/deform") != 0) nondeformbias = 1;
+  if (strcmp(temperature->style,"temp/deform/nhmesh") != 0) nondeformbias = 1;
 
   // check fix deform remap settings
 
@@ -70,12 +70,12 @@ void FixNVTSllodNHMesh::init()
   for (i = 0; i < modify->nfix; i++)
     if (strncmp(modify->fix[i]->style,"deform",6) == 0) {
       if (((FixDeform *) modify->fix[i])->remapflag != Domain::V_REMAP)
-        error->all(FLERR,"Using fix nhmesh/nvt/sllod with inconsistent fix "
+        error->all(FLERR,"Using fix nvt/sllod/nhmesh with inconsistent fix "
                    "deform remap option");
       break;
     }
   if (i == modify->nfix)
-    error->all(FLERR,"Using fix nhmesh/nvt/sllod with no fix deform defined");
+    error->all(FLERR,"Using fix nvt/sllod/nhmesh with no fix deform defined");
 }
 
 /* ----------------------------------------------------------------------

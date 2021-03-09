@@ -89,7 +89,7 @@ class FixNHMesh : public Fix {
   double *step_respa;
 
   char *id_coupling;
-  class ComputeCouplingNHMesh *coupling;
+  class ComputeNHMeshCouplingAtom *coupling;
 
   char *id_temp;
   class Compute *temperature;

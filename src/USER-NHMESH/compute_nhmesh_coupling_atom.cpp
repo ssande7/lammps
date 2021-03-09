@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_coupling_nhmesh_atom.h"
+#include "compute_nhmesh_coupling_atom.h"
 
 #include "atom.h"
 #include "update.h"
@@ -21,7 +21,6 @@
 #include "error.h"
 #include "memory.h"
 #include "modify.h"
-#include "region.h"
 #include "input.h"
 #include "variable.h"
 #include "math_const.h"
@@ -30,10 +29,11 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
+ComputeNHMeshCouplingAtom::ComputeNHMeshCouplingAtom(LAMMPS *lmp, int narg, char **arg)
   : Compute(lmp, narg, arg), coupling(nullptr)
 {
-  if (narg < 5) error->all(FLERR,"Illegal compute nhmesh/coupling command");
+  if (narg < 5)
+    error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
 
   int i;
 
@@ -49,7 +49,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     heuristic = GRID;
     for (i = 0; i < 3; i++) {
       if (narg < iarg+1)
-        error->all(FLERR,"Illegal compute nhmesh/coupling command");
+        error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
       if (strcmp(arg[iarg], "span") == 0) {
         grid_lo[i] = domain->boxlo[i];
         grid_hi[i] = domain->boxhi[i];
@@ -57,38 +57,38 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
         iarg++;
       } else {
         if (narg < iarg+2)
-          error->all(FLERR,"Illegal compute nhmesh/coupling command");
+          error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
         int ivar = input->variable->find(arg[iarg]);
         if (ivar >= 0) {
           if (!input->variable->equalstyle(ivar))
-            error->all(FLERR,
-                "Compute nhmesh/coupling grid variables must be equal style");
+            error->all(FLERR, "Compute nhmesh/coupling/atom grid variables "
+                "must be equal style");
           // TODO: evaluate during run to allow variable volume etc?
           grid_lo[i] = input->variable->compute_equal(ivar);
         } else grid_lo[i] = utils::numeric(FLERR,arg[iarg],false,lmp);
         ivar = input->variable->find(arg[iarg+1]);
         if (ivar >= 0) {
           if (!input->variable->equalstyle(ivar))
-            error->all(FLERR,
-                "Compute nhmesh/coupling grid variables must be equal style");
+            error->all(FLERR, "Compute nhmesh/coupling/atom grid variables "
+                "must be equal style");
           // TODO: evaluate during run to allow variable volume etc?
           grid_hi[i] = input->variable->compute_equal(ivar);
         } grid_hi[i] = utils::numeric(FLERR,arg[iarg+1],false,lmp);
         if (grid_lo[i] > grid_hi[i])
-          error->all(FLERR,"Illegal grid boundaries for nhmesh/coupling");
+          error->all(FLERR,"Illegal grid boundaries for nhmesh/coupling/atom");
         grid_span[i] = 0;
         iarg += 2;
       }
     }
     int n_check = 1;
     if (narg < iarg+3)
-      error->all(FLERR,"Illegal compute nhmesh/coupling command");
+      error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
     for (i=0; i<3; i++) {
       int ivar = input->variable->find(arg[iarg]);
       if (ivar >= 0) {
         if (!input->variable->equalstyle(ivar))
-          error->all(FLERR,
-              "Compute nhmesh/coupling grid variables must be equal style");
+          error->all(FLERR, "Compute nhmesh/coupling/atom grid variables must "
+              "be equal style");
         // TODO: evaluate during run to allow variable volume etc?
         grid_n[i] = input->variable->compute_equal(ivar);
         iarg++;
@@ -100,29 +100,30 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
         grid_hi[i] = (grid_n[i]-1) * grid_hi[i]/grid_n[i];
     }
     if (n_thermostats != n_check)
-      error->all(FLERR,"Illegal grid dimensions for nhmesh/coupling - "
+      error->all(FLERR,"Illegal grid dimensions for nhmesh/coupling/atom - "
                        "nx*ny*nz must equal N");
     if (narg > iarg+1) {
       if (narg != iarg+3)
-        error->all(FLERR,"Illegal compute nhmesh/coupling command");
+        error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
       for (i=0; i<3; i++) {
         int ivar = input->variable->find(arg[iarg]);
         if (ivar >= 0) {
           if (!input->variable->equalstyle(ivar))
-            error->all(FLERR,
-                "Compute nhmesh/coupling grid variables must be equal style");
+            error->all(FLERR, "Compute nhmesh/coupling/atom grid variables must"
+                " be equal style");
           // TODO: evaluate during run to allow variable volume etc?
           grid_decay[i] = input->variable->compute_equal(ivar);
           iarg++;
         } else grid_decay[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
         if (grid_decay[i] <= 0 || grid_decay[i] > grid_n[i])
-          error->all(FLERR,"Illegal grid decay length for nhmesh/coupling");
+          error->all(FLERR,
+              "Illegal grid decay length for nhmesh/coupling/atom");
       }
     }
-    memory->create(grid_pts,n_thermostats,3,"nhmesh/coupling:grid_pts");
+    memory->create(grid_pts,n_thermostats,3,"nhmesh/coupling/atom:grid_pts");
   } else if (strcmp(arg[4], "points") == 0) {
     heuristic = POINTS;
-    memory->create(points,n_thermostats-1,4,"nhmesh/coupling:points");
+    memory->create(points,n_thermostats-1,4,"nhmesh/coupling/atom:points");
     points_str = new char**[n_thermostats-1];
     points_varflag = new int*[n_thermostats-1];
     points_anyvar = 0;
@@ -134,7 +135,7 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
     }
     for (i=0; i<n_thermostats-1; i++) {
       if (narg < iarg+4)
-        error->all(FLERR,"Illegal compute nhmesh/coupling command");
+        error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
       points_varflag[i] = new int[4];
       points_str[i] = new char*[4];
       for (int j = 0; j < 4; j++) {
@@ -143,8 +144,8 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
           points_varflag[i][j] = 1;
           points_anyvar = 1;
           if (!input->variable->equalstyle(ivar))
-            error->all(FLERR,
-                "Compute nhmesh/coupling points variables must be equal style");
+            error->all(FLERR, "Compute nhmesh/coupling/atom points variables "
+                "must be equal style");
           points_str[i][j] = utils::strdup(arg[iarg++]);
         } else {
           points_str[i][j] = nullptr;
@@ -159,24 +160,25 @@ ComputeCouplingNHMesh::ComputeCouplingNHMesh(LAMMPS *lmp, int narg, char **arg)
 
     if (narg == iarg) points_decay = LINEAR;
     else if (narg != iarg+1)
-      error->all(FLERR,"Illegal compute nhmesh/coupling command");
+      error->all(FLERR,"Illegal compute nhmesh/coupling/atom command");
     else if (strcmp(arg[iarg],"linear")==0) points_decay = LINEAR;
     else if (strcmp(arg[iarg],"gaussian")==0) points_decay = GAUSSIAN;
     else if (strcmp(arg[iarg],"exp")==0) points_decay = EXP;
-    else error->all(FLERR,"Unknown decay style for nhmesh/coupling points command");
+    else error->all(FLERR,
+        "Unknown decay style for nhmesh/coupling/atom points command");
     iarg++;
-  } else error->all(FLERR,"Unknown nhmesh/coupling heuristic");
+  } else error->all(FLERR,"Unknown nhmesh/coupling/atom heuristic");
 
   peratom_flag = 1;
   size_peratom_cols = n_thermostats;
 
   nmax = 0;
-  memory->create(therm_sum, n_thermostats, "nhmesh/coupling:therm_sum");
+  memory->create(therm_sum, n_thermostats, "nhmesh/coupling/atom:therm_sum");
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeCouplingNHMesh::~ComputeCouplingNHMesh()
+ComputeNHMeshCouplingAtom::~ComputeNHMeshCouplingAtom()
 {
   if (!copymode) {
     memory->destroy(coupling);
@@ -201,11 +203,11 @@ ComputeCouplingNHMesh::~ComputeCouplingNHMesh()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeCouplingNHMesh::init() {}
+void ComputeNHMeshCouplingAtom::init() {}
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeCouplingNHMesh::setup()
+void ComputeNHMeshCouplingAtom::setup()
 {
   dynamic = 0;
   if (dynamic_user || group->dynamic[igroup]) dynamic = 1;
@@ -214,7 +216,7 @@ void ComputeCouplingNHMesh::setup()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeCouplingNHMesh::update_heuristics() {
+void ComputeNHMeshCouplingAtom::update_heuristics() {
   switch (heuristic) {
     case POINTS:
       if (points_anyvar) {
@@ -254,7 +256,7 @@ void ComputeCouplingNHMesh::update_heuristics() {
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
+double ComputeNHMeshCouplingAtom::calc_weight(double *x, int &j) {
   static const double r2pi = sqrt(2*MathConst::MY_PI);
   switch (heuristic) {
     case POINTS:
@@ -309,14 +311,14 @@ double ComputeCouplingNHMesh::calc_weight(double *x, int &j) {
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeCouplingNHMesh::compute_peratom()
+void ComputeNHMeshCouplingAtom::compute_peratom()
 {
   // grow coupling array if needed
 
   if (atom->nmax > nmax) {
     memory->destroy(coupling);
     nmax = atom->nmax;
-    memory->create(coupling,nmax,n_thermostats,"nhmesh/coupling:atom");
+    memory->create(coupling,nmax,n_thermostats,"nhmesh/coupling/atom:atom");
     array_atom = coupling;
   }
 

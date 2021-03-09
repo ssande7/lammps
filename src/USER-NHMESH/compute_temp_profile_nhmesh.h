@@ -13,7 +13,7 @@
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(temp/nhmesh/profile,ComputeTempProfileNHMesh)
+ComputeStyle(temp/profile/nhmesh,ComputeTempProfileNHMesh)
 
 #else
 
@@ -32,7 +32,7 @@ class ComputeTempProfileNHMesh : public ComputeTempProfile {
 
  protected:
   char *idcoupling;
-  class ComputeCouplingNHMesh *coupling;
+  class ComputeNHMeshCouplingAtom *coupling;
   int n_thermostats;
 
   void (ComputeTempProfileNHMesh::*array_compute_fn)();
@@ -48,18 +48,18 @@ class ComputeTempProfileNHMesh : public ComputeTempProfile {
 
 /* ERROR/WARNING messages:
 
-E: Compute ID for temp/nhmesh/profile does not exist
+E: Compute ID for temp/profile/nhmesh does not exist
 
 Self-explanatory.
 
-E: Invalid coupling compute for temp/nhmesh/profile
+E: Invalid coupling compute for temp/profile/nhmesh
 
-Coupling compute must be derived from nhmesh/coupling.
+Coupling compute must be derived from nhmesh/coupling/atom.
 
-W: Compute temp/nhmesh/profile can't be used as the temperature compute for fix
-   temp/nhmesh with out bin.
+W: Compute temp/profile/nhmesh can't be used as the temperature compute for fix
+   nvt/nhmesh with out bin.
 
-The out bin flag change the compute_array function, making it return results
+The out bin flag changes the compute_array function, making it return results
 that are incompatible with fix temp/nhmesh. This could cause undefined
 behaviour if used as the temperature compute for fix temp/nhmesh.
 

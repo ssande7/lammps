@@ -15,19 +15,15 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
-#include "compute_temp_nhmesh_deform.h"
-#include "compute_coupling_nhmesh_atom.h"
+#include "compute_temp_deform_nhmesh.h"
+#include "compute_nhmesh_coupling_atom.h"
 
-#include <cstring>
 #include "domain.h"
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "modify.h"
-#include "fix.h"
-#include "fix_deform.h"
 #include "group.h"
-#include "comm.h"
 #include "memory.h"
 #include "error.h"
 
@@ -42,11 +38,11 @@ ComputeTempDeformNHMesh::ComputeTempDeformNHMesh(LAMMPS *lmp, int narg, char **a
 
   int icoupling = modify->find_compute(idcoupling);
   if (icoupling < 0)
-    error->all(FLERR,"Compute ID for temp/nhmesh/profile does not exist");
+    error->all(FLERR,"Compute ID for temp/deform/nhmesh does not exist");
   Compute *comp = modify->compute[icoupling];
-  coupling = dynamic_cast<ComputeCouplingNHMesh *>(comp);
+  coupling = dynamic_cast<ComputeNHMeshCouplingAtom *>(comp);
   if (coupling == nullptr)
-    error->all(FLERR,"Invalid coupling compute for temp/nhmesh/profile");
+    error->all(FLERR,"Invalid coupling compute for temp/deform/nhmesh");
   n_thermostats = coupling->get_n_thermostats();
 
   array_flag = 1;
@@ -54,7 +50,7 @@ ComputeTempDeformNHMesh::ComputeTempDeformNHMesh(LAMMPS *lmp, int narg, char **a
   size_array_cols = 6;
   extarray = 1;
   memory->create(array,size_array_rows,size_array_cols,
-      "temp/nhmesh/deform:array");
+      "temp/deform/nhmesh:array");
 }
 
 /* ---------------------------------------------------------------------- */

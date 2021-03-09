@@ -22,7 +22,7 @@ TODO:
 
 /* -------------------------------------------------------------------------
 INPUT:
- compute ID grp-ID nhmesh/coupling N heuristic
+ compute ID grp-ID nhmesh/coupling/atom N heuristic
  * N          = number of thermostats (should match fix temp/nhmesh)
  * heuristic  = grid args or points args
     + grid xlo xhi ylo yhi zlo zhi nx ny nz decayx decayy decayz
@@ -56,21 +56,21 @@ INPUT:
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(nhmesh/coupling,ComputeCouplingNHMesh)
+ComputeStyle(nhmesh/coupling/atom,ComputeNHMeshCouplingAtom)
 
 #else
 
-#ifndef LMP_COMPUTE_COUPLING_NHMESH_H
-#define LMP_COMPUTE_COUPLING_NHMESH_H
+#ifndef LMP_COMPUTE_NHMESH_COUPLING_ATOM_H
+#define LMP_COMPUTE_NHMESH_COUPLING_ATOM_H
 
 #include "compute.h"
 
 namespace LAMMPS_NS {
 
-class ComputeCouplingNHMesh : public Compute {
+class ComputeNHMeshCouplingAtom : public Compute {
  public:
-  ComputeCouplingNHMesh(class LAMMPS *, int, char **);
-  virtual ~ComputeCouplingNHMesh();
+  ComputeNHMeshCouplingAtom(class LAMMPS *, int, char **);
+  virtual ~ComputeNHMeshCouplingAtom();
   void init();
   void setup();
   virtual void compute_peratom();
@@ -125,15 +125,15 @@ E: Illegal ... command
 
 Self-explanatory.
 
-E: Illegal grid dimensions for nhmesh/coupling - nx*ny*nz must equal N
+E: Illegal grid dimensions for nhmesh/coupling/atom - nx*ny*nz must equal N
 
 Self-explanatory.
 
-E: Illegal grid boundaries for nhmesh/coupling
+E: Illegal grid boundaries for nhmesh/coupling/atom
 
 Self-explanatory.
 
-E: Illegal grid boundaries for nhmesh/coupling
+E: Illegal grid boundaries for nhmesh/coupling/atom
 
 Self-explanatory.
 
@@ -141,23 +141,23 @@ E: Number of thermostats must be > 0
 
 Self-explanatory.
 
-E: Unknown nhmesh/coupling heuristic
+E: Unknown nhmesh/coupling/atom heuristic
 
 Self-explanatory.
 
-E: Compute nhmesh/coupling points variables must be vector style
+E: Compute nhmesh/coupling/atom points variables must be vector style
 
 Self-explanatory.
 
-E: Compute nhmesh/coupling grid variables must be equal style
+E: Compute nhmesh/coupling/atom grid variables must be equal style
 
 Self-explanatory.
 
-E: Compute nhmesh/coupling point variables must return a vector of length 4
+E: Compute nhmesh/coupling/atom point variables must return a vector of length 4
 
 Self-explanatory.
 
-E: Unknown decay style for nhmesh/coupling points command
+E: Unknown decay style for nhmesh/coupling/atom points command
 
 Self-explanatory.
 

@@ -53,7 +53,7 @@ class ComputeTempNHMesh : public ComputeTemp {
   char *idcoupling;
 
   // Compute that calculates atom-thermostat couplings
-  class ComputeCouplingNHMesh *coupling;
+  class ComputeNHMeshCouplingAtom *coupling;
 
   int n_thermostats;    // Number of thermostats controlling the atoms
 
@@ -73,6 +73,6 @@ particle-thermostat couplings
 
 E: Invalid coupling compute for temp/nhmesh/profile
 
-Coupling compute must be derived from nhmesh/coupling.
+Coupling compute must be derived from nhmesh/coupling/atom.
 
 */

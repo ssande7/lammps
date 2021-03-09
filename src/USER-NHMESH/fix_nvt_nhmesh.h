@@ -13,7 +13,7 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(nhmesh/nvt,FixNVTNHMesh)
+FixStyle(nvt/nhmesh,FixNVTNHMesh)
 
 #else
 

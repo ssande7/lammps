@@ -13,7 +13,7 @@
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(temp/nhmesh/deform,ComputeTempDeformNHMesh)
+ComputeStyle(temp/deform/nhmesh,ComputeTempDeformNHMesh)
 
 #else
 
@@ -33,7 +33,7 @@ class ComputeTempDeformNHMesh : public ComputeTempDeform {
 
  protected:
   char *idcoupling;
-  class ComputeCouplingNHMesh *coupling;
+  class ComputeNHMeshCouplingAtom *coupling;
   int n_thermostats;
 
 };
@@ -45,12 +45,12 @@ class ComputeTempDeformNHMesh : public ComputeTempDeform {
 
 /* ERROR/WARNING messages:
 
-E: Compute ID for temp/nhmesh/profile does not exist
+E: Compute ID for temp/deform/nhmesh does not exist
 
 Self-explanatory.
 
-E: Invalid coupling compute for temp/nhmesh/profile
+E: Invalid coupling compute for temp/deform/nhmesh
 
-Coupling compute must be derived from nhmesh/coupling
+Coupling compute must be derived from nhmesh/coupling/atom
 
 */

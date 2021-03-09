@@ -11,15 +11,13 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_temp_nhmesh_profile.h"
-#include "compute_coupling_nhmesh_atom.h"
+#include "compute_temp_profile_nhmesh.h"
+#include "compute_nhmesh_coupling_atom.h"
 
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "group.h"
-#include "domain.h"
 #include "memory.h"
 #include "modify.h"
 #include "error.h"
@@ -37,11 +35,11 @@ ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char *
 
   int icoupling = modify->find_compute(idcoupling);
   if (icoupling < 0)
-    error->all(FLERR,"Compute ID for temp/nhmesh/profile does not exist");
+    error->all(FLERR,"Compute ID for temp/profile/nhmesh does not exist");
   Compute *comp = modify->compute[icoupling];
-  coupling = dynamic_cast<ComputeCouplingNHMesh *>(comp);
+  coupling = dynamic_cast<ComputeNHMeshCouplingAtom *>(comp);
   if (coupling == nullptr)
-    error->all(FLERR,"Invalid coupling compute for temp/nhmesh/profile");
+    error->all(FLERR,"Invalid coupling compute for temp/profile/nhmesh");
   n_thermostats = coupling->get_n_thermostats();
 
   if (outflag == TENSOR) {
@@ -50,12 +48,12 @@ ComputeTempProfileNHMesh::ComputeTempProfileNHMesh(LAMMPS *lmp, int narg, char *
     size_array_cols = 6;
     extarray = 1;
     memory->create(array,size_array_rows,size_array_cols,
-        "temp/nhmesh/profile:array");
+        "temp/profile/nhmesh:array");
     array_compute_fn = &ComputeTempProfileNHMesh::compute_array_ke;
   } else {
     array_compute_fn = &ComputeTempProfileNHMesh::compute_array_bin;
-    error->warning(FLERR,"Compute temp/nhmesh/profile can't be used as the "
-                      "temperature compute for fix temp/nhmesh with out bin.");
+    error->warning(FLERR,"Compute temp/profile/nhmesh can't be used as the "
+                      "temperature compute for fix nvt/nhmesh with out bin.");
   }
 }
 
