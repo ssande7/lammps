@@ -24,7 +24,11 @@ TODO:
 INPUT:
  compute ID grp-ID nhmesh/coupling/atom N heuristic
  * N          = number of thermostats (should match fix temp/nhmesh)
- * heuristic  = grid args or points args
+ * (units) arg = optional units:
+                  box
+                  lattice
+                  reduced - unimplemented. Maybe not needed.
+ * heuristic = thermostat partitioning heuristic: grid or points
     + grid xlo xhi ylo yhi zlo zhi nx ny nz decayx decayy decayz
       - xlo, xhi, ylo, yhi, zlo, zhi
                     = extents of grid. Replace xlo xhi with span to use
@@ -89,6 +93,10 @@ class ComputeNHMeshCouplingAtom : public Compute {
     GRID,
     POINTS
   } heuristic;
+
+  
+  enum{BOX,LATTICE,REDUCED} scaleflag;
+  double scale[3];
 
   int grid_n[3];
   double **grid_pts;
