@@ -205,25 +205,10 @@ void ComputeNHMeshCouplingAtom::setup()
 {
   dynamic = 0;
   if (dynamic_user || group->dynamic[igroup]) dynamic = 1;
-  update_heuristics();
-}
 
-/* ---------------------------------------------------------------------- */
-
-void ComputeNHMeshCouplingAtom::update_heuristics() {
   switch (heuristic) {
     case POINTS:
-      if (points_anyvar) {
-        double pt_var;
-        int ivar;
-        for (int i=0; i<n_thermostats-fill_remainder; i++)
-          for (int j = 0; j < 4; j++) {
-            if (points_varflag[i][j]) {
-              ivar = input->variable->find(points_str[i][j]);
-              points[i][j] = scale[i] * input->variable->compute_equal(ivar);
-            }
-          }
-      }
+      // handled by update_heuristics()
       break;
     case GRID:
       for (int i = 0; i < 3; i++) {
@@ -244,6 +229,29 @@ void ComputeNHMeshCouplingAtom::update_heuristics() {
             grid_pts[j][i] = grid_lo[i];
         }
       }
+      break;
+  }
+  update_heuristics();
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeNHMeshCouplingAtom::update_heuristics() {
+  switch (heuristic) {
+    case POINTS:
+      if (points_anyvar) {
+        double pt_var;
+        int ivar;
+        for (int i=0; i<n_thermostats-fill_remainder; i++)
+          for (int j = 0; j < 4; j++) {
+            if (points_varflag[i][j]) {
+              ivar = input->variable->find(points_str[i][j]);
+              points[i][j] = scale[i] * input->variable->compute_equal(ivar);
+            }
+          }
+      }
+      break;
+    default:
       break;
   }
 }
@@ -315,6 +323,7 @@ void ComputeNHMeshCouplingAtom::compute_peratom()
     memory->create(coupling,nmax,n_thermostats,"nhmesh/coupling/atom:atom");
     array_atom = coupling;
   }
+  update_heuristics();
 
   int i, j;
 
