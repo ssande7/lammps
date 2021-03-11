@@ -568,7 +568,10 @@ double FixNHMesh::compute_vector(int n)
 
 void FixNHMesh::reset_target(double t_new)
 {
-  // TODO: should input be a vector? What calls this?
+  // Called by fix temper, so needs to take scalar. Maybe look at treating it as
+  // a scaling factor instead of the actual new temperature? In that case, would
+  // need a separate array to store config temperatures, and multiply that by
+  // scale_fac to give t_target, etc.
   for (int i = 0; i < n_thermostats; i++)
     t_target[i] = t_start[i] = t_stop[i] = t_new;
 }
