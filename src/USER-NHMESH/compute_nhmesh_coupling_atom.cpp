@@ -58,7 +58,7 @@ ComputeNHMeshCouplingAtom::ComputeNHMeshCouplingAtom(LAMMPS *lmp, int narg, char
     iarg+=2;
   } else scaleflag = BOX;
 
-  if (scaleflag == BOX) {
+  if (scaleflag == LATTICE) {
     scale[0] = domain->lattice->xlattice;
     scale[1] = domain->lattice->ylattice;
     scale[2] = domain->lattice->zlattice;
@@ -146,8 +146,10 @@ ComputeNHMeshCouplingAtom::ComputeNHMeshCouplingAtom(LAMMPS *lmp, int narg, char
                 "radii can not be NULL");
             points[i][j] = NAN;
             iarg++;
-          } else
-            points[i][j] = scale[i]*utils::numeric(FLERR,arg[iarg++],false,lmp);
+          } else if (j < 3)
+            points[i][j] = scale[j]*utils::numeric(FLERR,arg[iarg++],false,lmp);
+          else
+            points[i][j] = utils::numeric(FLERR,arg[iarg++],false,lmp);
         }
       }
     }
