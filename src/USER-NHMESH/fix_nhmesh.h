@@ -84,6 +84,7 @@ class FixNHMesh : public Fix {
   double *t_current, *t_target;
   double *ke_current, *ke_target;
   double *t_freq;
+  int *is_real;
 
   int nlevels_respa;
   double *step_respa;

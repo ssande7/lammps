@@ -113,7 +113,7 @@ void FixNVTSllodNHMesh::nhmesh_v_temp()
       else massone = mass[type[i]];
       fac = 0;
       for (int j = 0; j < n_thermostats; j++)
-        fac += coupling->array_atom[i][j] * factor_eta[j];
+        fac += is_real[j] * coupling->array_atom[i][j] * factor_eta[j];
       fac = exp(fac);
       vdelu[0] = h_two[0]*v[i][0] + h_two[5]*v[i][1] + h_two[4]*v[i][2];
       vdelu[1] = h_two[1]*v[i][1] + h_two[3]*v[i][2];

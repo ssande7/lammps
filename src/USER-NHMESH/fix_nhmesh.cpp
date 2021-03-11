@@ -90,12 +90,16 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
   t_freq = new double[n_thermostats];
   t_current = new double[n_thermostats];
   t_target = new double[n_thermostats];
+  is_real = new int[n_thermostats];
   ke_current = new double[n_thermostats];
   ke_target = new double[n_thermostats];
   mesh_dof = new double[n_thermostats];
   tdof = new double[n_thermostats];
   factor_eta = new double[n_thermostats];
-  for (i = 0; i < n_thermostats; i++) mesh_dof[i] = 0.0;
+  for (i = 0; i < n_thermostats; i++) {
+    mesh_dof[i] = 0.0;
+    is_real[i] = 1;
+  }
 
   // TODO: accept vectors here
   for (i = 0; i < n_thermostats; i++) {
@@ -140,9 +144,8 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
     if (i == 0 && strcmp(arg[iarg], "all") == 0) {
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal fix temp/nhmesh command");
-      for (; i < n_thermostats; i++) {
+      for (; i < n_thermostats; i++)
         t_period[i] = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      }
       iarg += 2;
     } else t_period[i] = utils::numeric(FLERR,arg[iarg++],false,lmp);
   }
@@ -170,6 +173,14 @@ FixNHMesh::FixNHMesh(LAMMPS *lmp, int narg, char **arg) :
             error->all(FLERR,"Thermostat couplings must be between 0 and 1");
           mesh_dof[i] += mesh_coupling[i][j];
         }
+    } else if (strcmp(arg[iarg],"virtual") == 0) {
+      iarg++;
+      while (iarg < narg && utils::is_integer(arg[iarg])) {
+        int ival = utils::inumeric(FLERR,arg[iarg++],false,lmp);
+        if (ival < 1 || ival > n_thermostats)
+          error->all(FLERR,"Virtual thermostats must be > 0 and <= N");
+        is_real[ival-1] = 0;
+      }
     } else error->all(FLERR,"Illegal fix temp/nhmesh command");
   }
 
@@ -307,15 +318,16 @@ void FixNHMesh::compute_temp_current() {
   double natoms_temp = group->count(igroup);
 
   for (int i = 0; i < n_thermostats; i++) {
-    tdof[i] = coupling->therm_sum[i]*temperature->dof/natoms_temp + mesh_dof[i];
+    tdof[i] = is_real[i]*coupling->therm_sum[i]*temperature->dof/natoms_temp
+              + mesh_dof[i];
     // update ke_target since dof might have changed
     ke_target[i] = tdof[i] * boltz * t_target[i];
-    ke_current[i] = ke[i][0] + ke[i][1] + ke[i][2];
+    ke_current[i] = is_real[i] * (ke[i][0] + ke[i][1] + ke[i][2]);
     ke_current[i] *= force->mvv2e;
     if (mesh_coupling_flag)
       for (int j = 0; j < n_thermostats; j++)
         ke_current[i] += mesh_coupling[i][j] * eta_mass[j]*eta_dot[j]*eta_dot[j];
-    t_current[i] = ke_current[i] / (boltz * tdof[i]);
+    t_current[i] = tdof[i] == 0 ? t_target[i] : ke_current[i] / (boltz * tdof[i]);
   }
 }
 
@@ -684,7 +696,8 @@ void FixNHMesh::nhmesh_temp_integrate()
     // TODO: Look into just rescaling ke_current instead of recalculating.
     //       Might not be possible.
     for (i = 0; i < n_thermostats; i++)
-      t_current[i] = ke_current[i] / (boltz * tdof[i]);
+      t_current[i] = tdof[i] == 0 ? t_target[i]
+                                  : ke_current[i] / (boltz * tdof[i]);
 
     for (i = 0; i < n_thermostats; i++) {
       if (eta_mass[i] > 0.0)
@@ -820,7 +833,7 @@ void FixNHMesh::nhmesh_v_temp()
         else massone = mass[type[i]];
         fac = 0;
         for (int j = 0; j < n_thermostats; j++)
-          fac += coupling->array_atom[i][j] * factor_eta[j];
+          fac += is_real[j] * coupling->array_atom[i][j] * factor_eta[j];
         fac = exp(fac);
         v[i][0] *= fac;
         v[i][1] *= fac;
@@ -838,7 +851,7 @@ void FixNHMesh::nhmesh_v_temp()
         temperature->remove_bias(i,v[i]);
         fac = 0;
         for (int j = 0; j < n_thermostats; j++)
-          fac += coupling->array_atom[i][j] * factor_eta[j];
+          fac += is_real[j] * coupling->array_atom[i][j] * factor_eta[j];
         fac = exp(fac);
         v[i][0] *= fac;
         v[i][1] *= fac;
