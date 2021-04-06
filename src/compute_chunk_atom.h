@@ -125,6 +125,8 @@ class ComputeChunkAtom : public Compute {
   void atom2binsphere();
   void atom2bincylinder();
   void readdim(int, char **, int, int);
+
+  friend class ComputeHeatFluxVAChunk;
 };
 
 }
