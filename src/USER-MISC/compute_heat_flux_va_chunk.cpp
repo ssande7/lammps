@@ -318,7 +318,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
   int c_ids[nchunk+3];
 
   // Number of rij segments
-  int n_intersect;
+  int n_seg;
 
   if (biasflag) {
     if (c_temp->invoked_scalar != update->ntimestep) c_temp->compute_scalar();
@@ -373,8 +373,8 @@ void ComputeHeatFluxVAChunk::compute_flux()
       confpair[1] = rij[1] * pairdot;
       confpair[2] = rij[2] * pairdot;
 
-      n_intersect = find_crossing(ichunk[i],ichunk[idj],xi,x[j],c_ids,cfactor);
-      for (int ci=0; ci < n_intersect; ci++) {
+      n_seg = find_crossing(ichunk[i],ichunk[idj],xi,x[j],c_ids,cfactor);
+      for (int ci=0; ci < n_seg; ci++) {
         int c = c_ids[ci];
         if (c >= 0) {
           cvalues_local[c][0] += cfactor[ci] * confpair[0];
@@ -455,7 +455,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(int ci, int cj, double *xi,
     c_ids[0] = ci-1;
     return 1;
   }
-  int n_intersect = 0;
+  int n_seg = 0;
   int dim = c_chunk->dim[cdim];
   int dir = rij[dim] > 0 ? 1 : -1;
   double delta = c_chunk->delta[cdim];
@@ -500,14 +500,14 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(int ci, int cj, double *xi,
       if (xlast >= boxhi[dim]) xlast -= prd[dim];
     }
 
-    cfactor[n_intersect] = fabs(xlast-intersection);
-    if (periodicity && cfactor[n_intersect] > prd[dim]/2)
-      cfactor[n_intersect] = fabs(prd[dim] - cfactor[n_intersect]);
+    cfactor[n_seg] = fabs(xlast-intersection);
+    if (periodicity && cfactor[n_seg] > prd[dim]/2)
+      cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
 
-    if (cfactor[n_intersect] > 0) {
-      cfactor[n_intersect] *= rijinv;
-      c_ids[n_intersect] = i-1;
-      n_intersect++;
+    if (cfactor[n_seg] > 0) {
+      cfactor[n_seg] *= rijinv;
+      c_ids[n_seg] = i-1;
+      n_seg++;
       xlast = intersection;
     }
 
@@ -515,7 +515,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(int ci, int cj, double *xi,
   // (i != cj) assumes rij <= half prd if direction is periodic, but this is
   // already assumed in many other places so shouldn't be a problem.
 
-  return n_intersect;
+  return n_seg;
 }
 
 /*------------------------------------------------------------------------*/
@@ -529,19 +529,19 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
     return 1;
   }
   int *nlayers = c_chunk->nlayers;
-  int c_ids1[nlayers[0]];
-  double cfactor1[nlayers[0]];
+  int *c_ids1 = new int[nlayers[0]];
+  double *cfactor1 = new double[nlayers[0]];
   int dim1 = c_chunk->dim[0];
   int ci1, cj1, ci2, cj2;
   ci1 = (ci-1)/nlayers[1];
   ci2 = (ci-1) - ci1*nlayers[1];
   cj1 = (cj-1)/nlayers[1];
   ci1++; ci2++; cj1++;
-  int n_intersect1 = crossing_bin1d(ci1,cj1,xi,rij,0,c_ids1,cfactor1);
+  int n_seg1 = crossing_bin1d(ci1,cj1,xi,rij,0,c_ids1,cfactor1);
 
-  if (n_intersect1 == 0) return 0;
+  if (n_seg1 == 0) return 0;
 
-  int n_intersect = 0;
+  int n_seg = 0;
   int dim2 = c_chunk->dim[1];
   int periodicity = domain->periodicity[dim2];
   double boxlo, boxhi, prd;
@@ -557,36 +557,36 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
     }
   }
   double xbin;
-  double invdelta = 1/c_chunk->delta[dim2];
-  double xi2[3], rij2[3];
-  xi2[0] = xi[0]; xi2[1] = xi[1]; xi2[2] = xi[2];
-  rij2[0] = rij2[1] = rij2[2] = 0;
-  for (int i1 = 0; i1 < n_intersect1; i1++) {
+  double invdelta = 1/c_chunk->delta[1];
+  double xi2[3] = {xi[0], xi[1], xi[2]};
+  double rij2[3] = {0.0, 0.0, 0.0};
+  for (int i1 = 0; i1 < n_seg1; i1++) {
     xi2[dim2] += rij2[dim2];
-    rij2[dim2] = rij[dim2]*cfactor[i1];
+    rij2[dim2] = rij[dim2]*cfactor1[i1];
     xbin = xi2[dim2]+rij2[dim2];
     if (periodicity) {
       if (xbin < boxlo) xbin += prd;
       if (xbin >= boxhi) xbin -= prd;
     }
-    cj2 = static_cast<int>((xbin - c_chunk->offset[dim2])*invdelta);
-    if (xbin < c_chunk->offset[dim2]) cj2--;
+    cj2 = static_cast<int>((xbin - c_chunk->offset[1])*invdelta);
+    if (xbin < c_chunk->offset[1]) cj2--;
     cj2++;
 
-    int n_new = crossing_bin1d(ci2, cj2, xi2, rij2, 1,
-        &c_ids[n_intersect], &cfactor[n_intersect]);
-    for (int n = n_intersect; n < n_intersect+n_new; n++) {
+    int n_new=crossing_bin1d(ci2,cj2,xi2,rij2,1,&c_ids[n_seg],&cfactor[n_seg]);
+    for (int n = n_seg; n < n_seg+n_new; n++) {
       cfactor[n] *= cfactor1[i1];
       if (c_ids[n] < 0 || c_ids1[i1] < 0)
         c_ids[n] = -1;
       else
         c_ids[n] += c_ids1[i1]*nlayers[1];
     }
-    n_intersect += n_new;
+    n_seg += n_new;
     ci2 = cj2;
   }
 
-  return n_intersect;
+  delete [] c_ids1;
+  delete [] cfactor1;
+  return n_seg;
 }
 
 /*------------------------------------------------------------------------*/
@@ -600,56 +600,66 @@ int ComputeHeatFluxVAChunk::crossing_bin3d(
     return 1;
   }
   int *nlayers = c_chunk->nlayers;
-  int c_ids12[nlayers[0]*nlayers[1]];
-  double cfactor12[nlayers[0]];
+  int *c_ids12 = new int[nlayers[0]*nlayers[1]];
+  double *cfactor12 = new double[nlayers[0]];
   int dim1 = c_chunk->dim[0];
   int ci12, cj12, ci3, cj3;
   ci12 = (ci-1)/nlayers[2];
   ci3 = (ci-1) - ci12*nlayers[2];
   cj12 = (cj-1)/nlayers[2];
   ci12++; ci3++; cj12++;
-  int n_intersect12 = crossing_bin2d(ci12,cj12,xi,rij,c_ids12,cfactor12);
+  int n_seg12 = crossing_bin2d(ci12,cj12,xi,rij,c_ids12,cfactor12);
 
-  if (n_intersect12 == 0) return 0;
+  if (n_seg12 == 0) return 0;
 
-  int n_intersect = 0;
+  int n_seg = 0;
   int dim3 = c_chunk->dim[2];
   int periodicity = domain->periodicity[dim3];
-  double boxlo = domain->boxlo[dim3];
-  double boxhi = domain->boxhi[dim3];
-  double prd = domain->prd[dim3];
-  double invdelta = 1/c_chunk->delta[dim3];
+  double invdelta = 1/c_chunk->delta[2];
+  double boxlo, boxhi, prd;
+  if (periodicity) {
+    if (c_chunk->scaleflag == REDUCED) {
+      boxlo = domain->boxlo_lamda[dim3];
+      boxhi = domain->boxhi_lamda[dim3];
+      prd = domain->prd_lamda[dim3];
+    } else {
+      boxlo = domain->boxlo[dim3];
+      boxhi = domain->boxhi[dim3];
+      prd = domain->prd[dim3];
+    }
+  }
   double xbin;
   double xi3[3], rij3[3];
   xi3[0] = xi[0]; xi3[1] = xi[1]; xi3[2] = xi[2];
   rij3[0] = rij3[1] = rij3[2] = 0;
-  for (int i12 = 0; i12 < n_intersect12; i12++) {
+  for (int i12 = 0; i12 < n_seg12; i12++) {
     xi3[dim3] += rij3[dim3];
-    rij3[dim3] = rij[dim3]*cfactor[i12];
+    rij3[dim3] = rij[dim3]*cfactor12[i12];
     xbin = xi3[dim3]+rij3[dim3];
     if (periodicity) {
       if (xbin < boxlo) xbin += prd;
       if (xbin >= boxhi) xbin -= prd;
     }
     cj3 = static_cast<int>(
-        (xbin - c_chunk->offset[dim3])*invdelta);
-    if (xbin < c_chunk->offset[dim3]) cj3--;
+        (xbin - c_chunk->offset[2])*invdelta);
+    if (xbin < c_chunk->offset[2]) cj3--;
     cj3++;
 
-    int n_new = crossing_bin1d(ci3, cj3, xi3, rij3, 1,
-        &c_ids[n_intersect], &cfactor[n_intersect]);
-    for (int n = n_intersect; n < n_intersect+n_new; n++) {
+    int n_new=crossing_bin1d(ci3,cj3,xi3,rij3,2,&c_ids[n_seg],&cfactor[n_seg]);
+    for (int n = n_seg; n < n_seg+n_new; n++) {
       cfactor[n] *= cfactor12[i12];
       if (c_ids[n] < 0 || c_ids12[i12] < 0)
         c_ids[n] = -1;
       else
         c_ids[n] += c_ids12[i12]*nlayers[2];
     }
-    n_intersect += n_new;
+    n_seg += n_new;
     ci3 = cj3;
   }
 
-  return n_intersect;
+  delete [] c_ids12;
+  delete [] cfactor12;
+  return n_seg;
 }
 
 /*------------------------------------------------------------------------*/
