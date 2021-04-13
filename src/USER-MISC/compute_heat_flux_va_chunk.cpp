@@ -43,7 +43,7 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
     LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg), cvalues(nullptr), cvalues_local(nullptr)
 {
-  if (narg < 6) error->all(FLERR,"Illegal compute stress/mop command");
+  if (narg < 6) error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
 
 
   MPI_Comm_rank(world,&me);
@@ -74,7 +74,7 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
 
   biasflag = NOBIAS;
   c_temp = nullptr;
-  if (narg > 6)
+  if (narg > 6) {
     if (strcmp(arg[6],"bias")==0) {
       biasflag = BIAS;
       id_temp = utils::strdup(arg[7]);
@@ -84,7 +84,8 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
       c_temp = modify->compute[itemp];
       if (!c_temp->tempbias)
         error->all(FLERR,"Bias compute does not calculate a velocity bias");
-    }
+    } else error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
+  }
 
   c_chunk = dynamic_cast<ComputeChunkAtom *>(modify->compute[ichunk]);
   if (c_chunk == nullptr)
@@ -114,6 +115,10 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
     error->all(FLERR,
         "Compute heat/flux/va/chunk incompatible with simulation dimension");
 
+  // Need atom map for chunk IDs of neighbors
+  if (!atom->map_style)
+    error->all(FLERR, "Compute heat/flux/va/chunk requires an atom map");
+
   c_ke = modify->compute[ike];
   c_pe = modify->compute[ipe];
 
@@ -123,7 +128,7 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
   size_array_rows = nchunk;
   size_array_rows_variable = 1;
 
-  array = cvalues_local = nullptr;
+  array = nullptr;
   maxchunk = 0;
   nchunk = 1;
   allocate();
@@ -153,6 +158,7 @@ void ComputeHeatFluxVAChunk::allocate()
         size_array_cols,"heat/flux/va/chunk:array");
     memory->grow(cvalues_local,size_array_rows,
         size_array_cols,"heat/flux/va/chunk:cvalues_local");
+    cvalues = array;
   }
 }
 
@@ -236,13 +242,11 @@ void ComputeHeatFluxVAChunk::compute_array()
   // Pack output array
   int m,n;
   for (m=0; m<nchunk; m++) {
-    for (n=0; n<3; n++) cvalues[m][n] += cvalues[m][n+3];
     for (n=0; n<6; n++) {
       if (  c_chunk->which == ArgInfo::BINSPHERE
          || c_chunk->which == ArgInfo::BINCYLINDER)
         cvalues[m][n] /= c_chunk->chunk_volume_vec[m];
       else cvalues[m][n] /= c_chunk->chunk_volume_scalar;
-      // TODO: fix units
     }
   }
 
@@ -256,6 +260,7 @@ void ComputeHeatFluxVAChunk::compute_array()
 void ComputeHeatFluxVAChunk::compute_flux()
 {
   int i,j,m,n,ii,jj,inum,jnum,itype,jtype;
+  int idj;
   double rsq,fpair,factor_coul,factor_lj;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -298,15 +303,12 @@ void ComputeHeatFluxVAChunk::compute_flux()
   Pair *pair = force->pair;
   double **cutsq = force->pair->cutsq;
 
-  double xi[3];
-  double *xj;
+  double *xi;
   double rij[3];
   double fij[3];
   double confpair[3];
   double pairdot;
-  double r;
   double *vi;
-  double *vj;
 
   // cfactor stores fraction of rij in each segment. Allocate nchunk+2 in case
   // rij crosses the full region of chunks, with xi and xj outside the region
@@ -327,9 +329,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
 
-    xi[0] = x[i][0];
-    xi[1] = x[i][1];
-    xi[2] = x[i][2];
+    xi = x[i];
     vi = v[i];
     itype = type[i];
     jlist = firstneigh[i];
@@ -338,6 +338,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
     // Configurational component
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
+      idj = atom->map(atom->tag[j]);
       factor_lj = special_lj[sbmask(j)];
       factor_coul = special_coul[sbmask(j)];
       j &= NEIGHMASK;
@@ -345,73 +346,64 @@ void ComputeHeatFluxVAChunk::compute_flux()
       // skip if neither i nor j are in group
       if (!(mask[i] & groupbit || mask[j] & groupbit)) continue;
 
-      // Can't skip if (ichunk[i] == 0 && ichunk[j] == 0)
+      // Can't skip if (ichunk[i] == 0 && ichunk[idj] == 0)
       // in case rij still crosses a chunk.
 
-      xj = x[j];
-      rij[0] = xj[0];
-      rij[1] = xj[1];
-      rij[2] = xj[2];
-      domain->remap_near(rij, xi);
-      rij[0] -= xi[0];
-      rij[1] -= xi[1];
-      rij[2] -= xi[2];
+      rij[0] = xi[0] - x[j][0];
+      rij[1] = xi[1] - x[j][1];
+      rij[2] = xi[2] - x[j][2];
       rsq = rij[0]*rij[0] + rij[1]*rij[1] + rij[2]*rij[2];
 
       jtype = type[j];
       if (rsq >= cutsq[itype][jtype]) continue;
 
-      r = sqrt(rsq);
-
       pair->single(i,j,itype,jtype,rsq,factor_coul,factor_lj,fpair);
-      fij[0] = rij[0]/r * fpair;
-      fij[1] = rij[1]/r * fpair;
-      fij[2] = rij[2]/r * fpair;
+      fij[0] = rij[0] * fpair;
+      fij[1] = rij[1] * fpair;
+      fij[2] = rij[2] * fpair;
 
-      if (newton_pair || j < nlocal) {
-        // pair only stored once
-        pairdot = (fij[0]*(vi[0]+vj[0]) +
-                   fij[1]*(vi[1]+vj[1]) +
-                   fij[2]*(vi[2]+vj[2]))/2;
-      } else {
-        // ghost atom, pair is repeated on another process
-        pairdot = (fij[0]*vi[0] + fij[1]*vi[1] + fij[2]*vi[2])/2;
-      }
+      if (newton_pair || j < nlocal)
+        pairdot = (fij[0]*(vi[0]+v[idj][0]) +
+                   fij[1]*(vi[1]+v[idj][1]) +
+                   fij[2]*(vi[2]+v[idj][2]))*0.5;
+      else
+        pairdot = (fij[0]*vi[0] + fij[1]*vi[1] + fij[2]*vi[2])*0.5;
 
       confpair[0] = rij[0] * pairdot;
       confpair[1] = rij[1] * pairdot;
       confpair[2] = rij[2] * pairdot;
 
-      n_intersect = find_crossing(ichunk[i],ichunk[j],xi,rij,c_ids,cfactor);
-      for (int ci=0, c=c_ids[ci]; c < n_intersect; c++)
+      n_intersect = find_crossing(ichunk[i],ichunk[idj],xi,x[j],c_ids,cfactor);
+      for (int ci=0; ci < n_intersect; ci++) {
+        int c = c_ids[ci];
         if (c >= 0) {
-          cvalues_local[c][3] -= cfactor[ci] * confpair[0];
-          cvalues_local[c][4] -= cfactor[ci] * confpair[1];
-          cvalues_local[c][5] -= cfactor[ci] * confpair[2];
+          cvalues_local[c][0] += cfactor[ci] * confpair[0];
+          cvalues_local[c][1] += cfactor[ci] * confpair[1];
+          cvalues_local[c][2] += cfactor[ci] * confpair[2];
         }
-
+      }
     }
   }
 
   // Kinetic component
   for (i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
-      int ci = ichunk[i];
-      if (ci > 0) {
+      int c = ichunk[i]-1;
+      if (c >= 0) {
         double ei = c_ke->vector_atom[i] + c_pe->vector_atom[i];
-        cvalues_local[ci-1][0] += ei * v[i][0];
-        cvalues_local[ci-1][1] += ei * v[i][1];
-        cvalues_local[ci-1][2] += ei * v[i][2];
+        cvalues_local[c][3] += ei * v[i][0];
+        cvalues_local[c][4] += ei * v[i][1];
+        cvalues_local[c][5] += ei * v[i][2];
       }
     }
+
+  if (biasflag) c_temp->restore_bias_all();
 
   for (m = 0; m < nchunk; m++) {
     cvalues_local[m][0] += cvalues_local[m][3];
     cvalues_local[m][1] += cvalues_local[m][4];
     cvalues_local[m][2] += cvalues_local[m][5];
   }
-
-  if (biasflag) c_temp->restore_bias_all();
 
   MPI_Allreduce(cvalues_local[0],cvalues[0],nchunk*6, MPI_DOUBLE,MPI_SUM,world);
 }
@@ -421,13 +413,16 @@ void ComputeHeatFluxVAChunk::compute_flux()
   -------------------------------------------------------------------------*/
 
 int ComputeHeatFluxVAChunk::find_crossing(
-    int ci, int cj, double *xi, double *rij, int *c_ids, double *cfactor)
+    int ci, int cj, double *xi_in, double *xj_in, int *c_ids, double *cfactor)
 {
+  double xi[3] = {xi_in[0], xi_in[1], xi_in[2]};
+  double xj[3] = {xj_in[0], xj_in[1], xj_in[2]};
   if (c_chunk->scaleflag == REDUCED) {
-    domain->x2lamda(xi,xi);
-    domain->x2lamda(rij, rij);
+    domain->x2lamda(xi, xi);
+    domain->x2lamda(xj, xj);
   }
-  // No need to convert back afterwards since these values are no longer needed
+
+  double rij[3] = {xj[0]-xi[0], xj[1]-xi[1], xj[2]-xi[2]};
 
   if (c_chunk->which == ArgInfo::BINSPHERE)
     return crossing_binsphere(ci, cj, xi, rij, c_ids, cfactor);
@@ -460,13 +455,11 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(int ci, int cj, double *xi,
     c_ids[0] = ci-1;
     return 1;
   }
-  int n_intersect;
+  int n_intersect = 0;
   int dim = c_chunk->dim[cdim];
   int dir = rij[dim] > 0 ? 1 : -1;
   double delta = c_chunk->delta[cdim];
   double offset = c_chunk->offset[cdim];
-  double invdelta = c_chunk->invdelta[cdim];
-  double ndelta = rij[dim]/delta;
   double x;
   double *boxlo,*boxhi,*prd;
   int periodicity = domain->periodicity[dim];
@@ -482,44 +475,47 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(int ci, int cj, double *xi,
     }
   }
 
-  c_ids[n_intersect++] = ci-1;
   double xlast = xi[dim];
-  bool newflag;
-  double rijinv = 1/rij[dim];
-  for (int i = 0; i <= ndelta; i++) {
-    x = xi[dim] + i*delta*dir;
+  double rijinv = 1/fabs(rij[dim]);
+  double intersection;
+  int i = ci-dir;
+  do {
+    i+=dir;
+    if (i < 0) i += c_chunk->nlayers[cdim]+1;
+    if (i > c_chunk->nlayers[cdim]) {
+      if (periodicity) i -= c_chunk->nlayers[cdim]+1;
+      else break;   // This shouldn't happen
+    }
+
+    if (i == cj)
+      intersection = (xi[dim]+rij[dim]);
+    else {
+      if (i > 0) intersection = offset+delta*(i+(dir-1)/2);
+      else if (dir < 0) intersection = offset+delta*c_chunk->nlayers[cdim];
+      else /* (dir > 0) */ intersection = offset;
+    }
+
     if (periodicity) {
-      if (x < boxlo[dim]) x += prd[dim];
-      if (x >= boxhi[dim]) x -= prd[dim];
+      if (xlast < boxlo[dim]) xlast += prd[dim];
+      if (xlast >= boxhi[dim]) xlast -= prd[dim];
     }
-    int ibin = static_cast<int>((x - offset)*invdelta);
-    if (x < offset) ibin--;
 
-    // Check for new intersection or final segment
-    newflag = false;
-    if (i > ndelta-1) {
-      // Make sure it doesn't go beyond the end
-      cfactor[n_intersect-1] = fabs(xi[dim]+rij[dim] - xlast);
-      newflag = true;
-    } else if (ibin != c_ids[n_intersect-1]) {
-      cfactor[n_intersect-1] = fabs(offset+delta*(ibin-(dir-1)/2) - xlast);
-      if (cfactor[n_intersect-1] > prd[dim]/2)
-        cfactor[n_intersect-1] = fabs(cfactor[n_intersect-1] - prd[dim]);
-      newflag = true;
-    }
-    if (newflag) {
-      cfactor[n_intersect] *= dir;
-      xlast += cfactor[n_intersect];
+    cfactor[n_intersect] = fabs(xlast-intersection);
+    if (periodicity && cfactor[n_intersect] > prd[dim]/2)
+      cfactor[n_intersect] = fabs(prd[dim] - cfactor[n_intersect]);
+
+    if (cfactor[n_intersect] > 0) {
       cfactor[n_intersect] *= rijinv;
-      if (ibin < c_chunk->nlayers[cdim])
-        c_ids[n_intersect] = ibin;
-      else
-        c_ids[n_intersect] = -1;
+      c_ids[n_intersect] = i-1;
       n_intersect++;
+      xlast = intersection;
     }
-  }
 
-  return n_intersect-1;
+  } while (i != cj);
+  // (i != cj) assumes rij <= half prd if direction is periodic, but this is
+  // already assumed in many other places so shouldn't be a problem.
+
+  return n_intersect;
 }
 
 /*------------------------------------------------------------------------*/
@@ -532,7 +528,7 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
     c_ids[0] = ci-1;
     return 1;
   }
-  int *nlayers = nlayers;
+  int *nlayers = c_chunk->nlayers;
   int c_ids1[nlayers[0]];
   double cfactor1[nlayers[0]];
   int dim1 = c_chunk->dim[0];
@@ -548,9 +544,18 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
   int n_intersect = 0;
   int dim2 = c_chunk->dim[1];
   int periodicity = domain->periodicity[dim2];
-  double boxlo = domain->boxlo[dim2];
-  double boxhi = domain->boxhi[dim2];
-  double prd = domain->prd[dim2];
+  double boxlo, boxhi, prd;
+  if (periodicity) {
+    if (c_chunk->scaleflag == REDUCED) {
+      boxlo = domain->boxlo_lamda[dim2];
+      boxhi = domain->boxhi_lamda[dim2];
+      prd = domain->prd_lamda[dim2];
+    } else {
+      boxlo = domain->boxlo[dim2];
+      boxhi = domain->boxhi[dim2];
+      prd = domain->prd[dim2];
+    }
+  }
   double xbin;
   double invdelta = 1/c_chunk->delta[dim2];
   double xi2[3], rij2[3];
