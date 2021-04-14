@@ -1,6 +1,6 @@
-.. index:: compute heat/flux/va
+.. index:: compute heat/flux/va/chunk
 
-compute heat/flux/va command
+compute heat/flux/va/chunk command
 =========================
 
 Syntax
@@ -8,228 +8,177 @@ Syntax
 
 .. parsed-literal::
 
-   compute ID group-ID heat/flux/va [TODO: input args]
+   compute ID group-ID heat/flux/va/chunk ke-ID pe-ID chunk-ID keyword args
 
 * ID, group-ID are documented in :doc:`compute <compute>` command
-* heat/flux = style name of this compute command
-.. * ke-ID = ID of a compute that calculates per-atom kinetic energy
-.. * pe-ID = ID of a compute that calculates per-atom potential energy
-.. * stress-ID = ID of a compute that calculates per-atom stress
+* heat/flux/va/chunk = style name of this compute command
+* ke-ID = ID of a compute that calculates per-atom kinetic energy
+* pe-ID = ID of a compute that calculates per-atom potential energy
+* chunk-ID = ID of a compute chunk/atom command
+* zero or more keyword/arg pairs may be appended
+
+   .. parsed-literal::
+
+        *bias* arg = bias-ID
+          bias-ID = ID of a temperature compute of style temp/chunk
+        *kbias* arg = kbias-ID
+          kbias-ID = ID of a temperature compute that calculates a velocity bias
 
 Examples
 """"""""
 
 .. code-block:: LAMMPS
 
-   compute myFlux all heat/flux/va [TODO: example input]
+   compute myFlux all heat/flux/va/chunk myKE myPE myChunks
+   compute myFlux all heat/flux/va/chunk myKE myPE myChunks bias myTempChunk
+   compute myFlux all heat/flux/va/chunk myKE myPE myChunks bias myTempChunk kbias myTempDeform
 
 Description
 """""""""""
 
-Define a computation that calculates the heat flux vector per chunk using the
-volume averaged (VA) method as described in :ref:`(Smith) <Smith>`.
+Define a computate that calculates the local heat flux vector in each chunk
+using the volume averaged (VA) method as described by :ref:`(Smith) <Smith>`.
+The heat flux in a chunk is calculated as
 
-TODO: MORE DETAILS, UPDATE/TRIM STUFF COPIED FROM compute heat/flux
+.. math::
+   \mathbf{J}_c &= \frac{1}{V_c} \left[ \sum_{i \in c} e_i \mathbf{v}_i - \sum_{i} \sum_{j} \mathbf{r}_{ij} \mathbf{F}_{ij} \cdot \mathbf{v}_i l_{ij} \right] \\
 
-based on
-contributions from atoms in the specified group.  This can be used by
-itself to measure the heat flux through a set of atoms (e.g. a region
-between two thermostatted reservoirs held at different temperatures),
-or to calculate a thermal conductivity using the equilibrium
-Green-Kubo formalism.
+The first term is the kinetic (convective) component, where :math:`e_i` is the
+per-atom energy (potential and kinetic) as calculated by the computes *ke-ID*
+and *pe-ID*, and the sum is over all atoms in chunk c. The second term is the
+configurational component, and :math:`l_{ij}` is a selector function which gives
+the fraction of the vector :math:`\mathbf{r}_{ij}` within the chunk.  Note that
+this means atoms that are not inside a chunk can still contribute to that
+chunk's heat flux.  The configurational component considers all atom pairs in
+which at least one atom is within the specified compute group.
 
-For other non-equilibrium ways to compute a thermal conductivity, see
-the :doc:`Howto kappa <Howto_kappa>` doc page..  These include use of
-the :doc:`fix thermal/conductivity <fix_thermal_conductivity>` command
-for the Muller-Plathe method.  Or the :doc:`fix heat <fix_heat>` command
-which can add or subtract heat from groups of atoms.
+.. warning::
+
+   Only pairwise interactions are currently supported in the calculation of the
+   configurational component. All other forces, including bond, angle, dihedral,
+   improper, and kspace, are ignored. Hence, this compute is not suitable for
+   molecular systems.
+
+.. note::
+
+   The configurational component does not include any Lennard-Jones tail
+   corrections added by the :doc:`pair_modify tail yes <pair_modify>`
+   command, since those are contributions to the global system.
+
+Removal of a velocity bias is supported via the *bias* keyword. It takes the
+ID of a compute of type temp/chunk as an argument (see
+:doc:`compute temp/chunk <compute_temp_chunk>`).  The temp/chunk compute should
+use *chunk-ID* as its chunk/atom compute.  With velocity bias removed,
+:math:`\mathbf{v}_i` in the the kinetic component of the equation for
+:math:`\mathbf{J}_c` is replaced by the peculiar velocity, and the velocity in
+the configurational component becomes
+:math:`\left( \mathbf{v}_i - \mathbf{v}_c \right)`, where
+:math:`\mathbf{v}_c` is the center of mass velocity of the chunk as calculated
+by :doc:`compute temp/chunk <compute_temp_chunk>`.  An alternative bias can be
+specified using the *kbias* keyword for the kinetic component only (for example,
+it may be desirable in a SLLOD simulation to use
+:doc:`compute temp/deform <compute_temp_deform>` to calculate peculiar
+velocities).  If *kbias* is not specified but *bias* is, both components are
+calculated using the same velocity bias.
+
+.. note::
+
+   The use of center of mass velocity is an approximation to the exact solution,
+   as discussed in :ref:`(Smith) <Smith>`. The most accurate results will be
+   obtained when there is minimal difference in the local streaming velocity
+   within a chunk.
 
 The compute takes three arguments which are IDs of other
 :doc:`computes <compute>`.  One calculates per-atom kinetic energy
 (\ *ke-ID*\ ), one calculates per-atom potential energy (\ *pe-ID)*\ , and the
-third calculates per-atom stress (\ *stress-ID*\ ).
+third assigns chunk IDs to atoms (\ *chunk-ID*\ ).
 
 .. note::
 
-   These other computes should provide values for all the atoms in
-   the group this compute specifies.  That means the other computes could
-   use the same group as this compute, or they can just use group "all"
-   (or any group whose atoms are superset of the atoms in this compute's
-   group).  LAMMPS does not check for this.
+   These other computes, as well as temperature computes provided for bias
+   calculation, should provide values for all the atoms in the group this
+   compute specifies.  That means the other computes could use the same group as
+   this compute, or they can just use group "all" (or any group whose atoms are
+   superset of the atoms in this compute's group).  Additionally, the chunk-ID
+   compute should also include all atoms that *interact* with atoms in this
+   compute's group through pairwise forces.  LAMMPS does not check for this.
 
-In case of two-body interactions, the heat flux is defined as:
-
-.. math::
-   \mathbf{J} &= \frac{1}{V} \left[ \sum_i e_i \mathbf{v}_i - \sum_{i} \mathbf{S}_{i} \mathbf{v}_i \right] \\
-   &= \frac{1}{V} \left[ \sum_i e_i \mathbf{v}_i + \sum_{i<j} \left( \mathbf{F}_{ij} \cdot \mathbf{v}_j \right) \mathbf{r}_{ij} \right] \\
-   &= \frac{1}{V} \left[ \sum_i e_i \mathbf{v}_i + \frac{1}{2} \sum_{i<j} \left( \mathbf{F}_{ij} \cdot \left(\mathbf{v}_i + \mathbf{v}_j \right)  \right) \mathbf{r}_{ij} \right]
-
-:math:`e_i` in the first term of the equation
-is the per-atom energy (potential and kinetic).
-This is calculated by the computes *ke-ID*
-and *pe-ID*. :math:`\mathbf{S}_i` in the second term is the
-per-atom stress tensor calculated by the compute *stress-ID*.
-See :doc:`compute stress/atom <compute_stress_atom>`
-and :doc:`compute centroid/stress/atom <compute_stress_atom>`
-for possible definitions of atomic stress :math:`\mathbf{S}_i`
-in the case of bonded and many-body interactions.
-The tensor multiplies :math:`\mathbf{v}_i` as a 3x3 matrix-vector multiply
-to yield a vector.
-Note that as discussed below, the 1/:math:`{V}` scaling factor in the
-equation for :math:`\mathbf{J}` is NOT included in the calculation performed by
-these computes; you need to add it for a volume appropriate to the atoms
-included in the calculation.
+In LAMMPS, chunks are collections of atoms defined by a
+:doc:`compute chunk/atom <compute_chunk_atom>` command, which assigns each atom
+to a single chunk (or no chunk).  Only chunks defined by spatial bins are
+allowed (and not those defined by type or molecule), as the compute uses the
+bin volume in the heat flux calculation.  See the :doc:`compute chunk/atom <compute_chunk_atom>`
+doc page and the :doc:`Howto chunk <Howto_chunk>` doc page for details of how
+chunks can be defined and examples of how they can be used to measure
+properties of a system.
 
 .. note::
 
-   The :doc:`compute pe/atom <compute_pe_atom>` and
-   :doc:`compute stress/atom <compute_stress_atom>`
-   commands have options for which
-   terms to include in their calculation (pair, bond, etc).  The heat
-   flux calculation will thus include exactly the same terms. Normally
-   you should use :doc:`compute stress/atom virial <compute_stress_atom>`
-   or :doc:`compute centroid/stress/atom virial <compute_stress_atom>`
-   so as not to include a kinetic energy term in the heat flux.
+   Unlike :doc:`compute heat/flux <compute_heat_flux>`, this compute includes
+   volume in the heat flux calculation, and hence a 1/`:math:`{V}` scaling
+   factor is not required in post-processing.
 
-.. warning::
+.. note::
 
-   The compute *heat/flux* has been reported to produce unphysical
-   values for angle, dihedral and improper contributions
-   when used with :doc:`compute stress/atom <compute_stress_atom>`,
-   as discussed in :ref:`(Surblys) <Surblys2>` and :ref:`(Boone) <Boone>`.
-   You are strongly advised to
-   use :doc:`compute centroid/stress/atom <compute_stress_atom>`,
-   which has been implemented specifically for such cases.
+   The :doc:`compute pe/atom <compute_pe_atom>` command has options for which
+   terms to include in its calculation (pair, bond, etc).  The heat
+   flux calculation will thus include exactly the same terms in the kinetic
+   (convective) component. However, this has no influence on the calculation of
+   the configurational component (see warning above).
 
-The Green-Kubo formulas relate the ensemble average of the
-auto-correlation of the heat flux :math:`\mathbf{J}`
-to the thermal conductivity :math:`\kappa`:
-
-.. math::
-   \kappa  = \frac{V}{k_B T^2} \int_0^\infty \langle J_x(0)  J_x(t) \rangle \, \mathrm{d} t = \frac{V}{3 k_B T^2} \int_0^\infty \langle \mathbf{J}(0) \cdot  \mathbf{J}(t)  \rangle \, \mathrm{d}t
-
-----------
-
-The heat flux can be output every so many timesteps (e.g. via the
-:doc:`thermo_style custom <thermo_style>` command).  Then as a
-post-processing operation, an auto-correlation can be performed, its
-integral estimated, and the Green-Kubo formula above evaluated.
-
-The :doc:`fix ave/correlate <fix_ave_correlate>` command can calculate
-the auto-correlation.  The trap() function in the
-:doc:`variable <variable>` command can calculate the integral.
-
-An example LAMMPS input script for solid Ar is appended below.  The
-result should be: average conductivity ~0.29 in W/mK.
-
-----------
+See the documentation of :doc:`compute heat/flux <compute_heat_flux>` for a
+discussion of how to calculate thermal conductivity.
 
 Output info
 """""""""""
 
 This compute calculates a global array of size *Nchunks* by 6.
-The first 3 components of each column are the :math:`x`, :math:`y`, :math:`z`
+The first 3 components of each row are the :math:`x`, :math:`y`, :math:`z`
 components of the chunk's heat flux vector,
 i.e. (:math:`J_x`, :math:`J_y`, :math:`J_z`).
 The next 3 components are the :math:`x`, :math:`y`, :math:`z` components
-of just the convective portion of the flux, i.e. the
+of just the kinetic (convective) portion of the flux, i.e. the
 first term in the equation for :math:`\mathbf{J}`.
-Each component can be
-accessed by indices 1-6. These values can be used by any command that
-uses global vector values from a compute as input.  See the
-:doc:`Howto output <Howto_output>` doc page for an overview of LAMMPS output
-options.
+Each component can be accessed by row indices 1-Nchunks and column indices 1-6.
+These values can be used by any command that uses global array values from a
+compute as input.  See the :doc:`Howto output <Howto_output>` doc page for an
+overview of LAMMPS output options.
 
 The array values calculated by this compute are "intensive", meaning
-they independent of the number of atoms in the simulation.
+they are independent of the number of atoms in the simulation.
 
-The vector values will be in energy/area/time :doc:`units <units>`.
+The array values will be in energy/area/time :doc:`units <units>`.
 
 Restrictions
 """"""""""""
- none
+
+This command is part of the USER-MISC package. It is only enabled if LAMMPS is
+built with that package.  See the :doc:`Build package <Build_package>` doc page
+for more information.
+
+Only two-body pair interactions are supported, as the pair->single() class
+method is required.  All other interactions such as intra-molecular interactions
+and long range (kspace) interactions are ignored.
+
+2D simulations are not supported.
+
+If a velocity bias is subtracted, the ID of the chunk/atom compute used by the
+compute temp/chunk command (*bias-ID*) must match the ID supplied to this command as
+*chunk-ID*.
 
 Related commands
 """"""""""""""""
 
-:doc:`fix thermal/conductivity <fix_thermal_conductivity>`,
-:doc:`fix ave/correlate <fix_ave_correlate>`,
 :doc:`compute heat/flux <compute_heat_flux>`,
+:doc:`compute chunk/atom <compute_chunk_atom>`,
+:doc:`compute temp/chunk <compute_temp_chunk>`,
+:doc:`fix ave/correlate <fix_ave_correlate>`,
 :doc:`variable <variable>`
 
 Default
 """""""
 
 none
-
-----------
-
-.. code-block:: LAMMPS
-
-   # TODO: MODIFY THIS TO GIVE EXAMPLE OF HEAT FLUX UNDER FLOW SIMULATION
-
-   # Sample LAMMPS input script for thermal conductivity of solid Ar
-
-   units       real
-   variable    T equal 70
-   variable    V equal vol
-   variable    dt equal 4.0
-   variable    p equal 200     # correlation length
-   variable    s equal 10      # sample interval
-   variable    d equal $p*$s   # dump interval
-
-   # convert from LAMMPS real units to SI
-
-   variable    kB equal 1.3806504e-23    # [J/K] Boltzmann
-   variable    kCal2J equal 4186.0/6.02214e23
-   variable    A2m equal 1.0e-10
-   variable    fs2s equal 1.0e-15
-   variable    convert equal ${kCal2J}*${kCal2J}/${fs2s}/${A2m}
-
-   # setup problem
-
-   dimension    3
-   boundary     p p p
-   lattice      fcc 5.376 orient x 1 0 0 orient y 0 1 0 orient z 0 0 1
-   region       box block 0 4 0 4 0 4
-   create_box   1 box
-   create_atoms 1 box
-   mass         1 39.948
-   pair_style   lj/cut 13.0
-   pair_coeff   * * 0.2381 3.405
-   timestep     ${dt}
-   thermo       $d
-
-   # equilibration and thermalization
-
-   velocity     all create $T 102486 mom yes rot yes dist gaussian
-   fix          NVT all nvt temp $T $T 10 drag 0.2
-   run          8000
-
-   # thermal conductivity calculation, switch to NVE if desired
-
-   #unfix       NVT
-   #fix         NVE all nve
-
-   reset_timestep 0
-   compute      myKE all ke/atom
-   compute      myPE all pe/atom
-   compute      myStress all stress/atom NULL virial
-   compute      flux all heat/flux myKE myPE myStress
-   variable     Jx equal c_flux[1]/vol
-   variable     Jy equal c_flux[2]/vol
-   variable     Jz equal c_flux[3]/vol
-   fix          JJ all ave/correlate $s $p $d &
-                c_flux[1] c_flux[2] c_flux[3] type auto file J0Jt.dat ave running
-   variable     scale equal ${convert}/${kB}/$T/$T/$V*$s*${dt}
-   variable     k11 equal trap(f_JJ[3])*${scale}
-   variable     k22 equal trap(f_JJ[4])*${scale}
-   variable     k33 equal trap(f_JJ[5])*${scale}
-   thermo_style custom step temp v_Jx v_Jy v_Jz v_k11 v_k22 v_k33
-   run          100000
-   variable     k equal (v_k11+v_k22+v_k33)/3.0
-   variable     ndens equal count(all)/vol
-   print        "average conductivity: $k[W/mK] @ $T K, ${ndens} /A\^3"
 
 ----------
 
