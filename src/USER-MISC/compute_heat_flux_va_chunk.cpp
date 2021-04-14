@@ -20,6 +20,7 @@
 #include "arg_info.h"
 #include "atom.h"
 #include "compute_chunk_atom.h"
+#include "compute_temp_chunk.h"
 #include "domain.h"
 #include "error.h"
 #include "force.h"
@@ -41,7 +42,8 @@ enum{ONCE,NFREQ,EVERY};              // used in several files
 
 ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
     LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg), cvalues(nullptr), cvalues_local(nullptr)
+  Compute(lmp, narg, arg), cvalues(nullptr), cvalues_local(nullptr),
+  cfactor(nullptr), c_ids(nullptr)
 {
   if (narg < 6) error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
 
@@ -73,19 +75,38 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
   // Velocity bias
 
   biasflag = NOBIAS;
-  c_temp = nullptr;
-  if (narg > 6) {
-    if (strcmp(arg[6],"bias")==0) {
+  c_temp_c = nullptr;
+  c_temp_k = nullptr;
+  int iarg = 6;
+  while (narg > iarg) {
+    if (strcmp(arg[iarg],"bias")==0) {
       biasflag = BIAS;
-      id_temp = utils::strdup(arg[7]);
-      int itemp = modify->find_compute(id_temp);
+      id_temp_c = utils::strdup(arg[iarg+1]);
+      int itemp = modify->find_compute(id_temp_c);
       if (itemp < 0)
         error->all(FLERR,"Could not find compute heat/flux/va/chunk compute ID");
-      c_temp = modify->compute[itemp];
-      if (!c_temp->tempbias)
-        error->all(FLERR,"Bias compute does not calculate a velocity bias");
+      c_temp_c = dynamic_cast<ComputeTempChunk *>(modify->compute[itemp]);
+      if (c_temp_c == nullptr)
+        error->all(FLERR,"Bias must be a compute of type temp/chunk");
+      if (c_temp_c->cchunk != c_chunk)
+        error->all(FLERR,"Chunk/atom compute used by bias must match chunk "
+                         "compute of compute heat/flux/va/chunk");
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"kbias")==0) {
+      id_temp_k = utils::strdup(arg[iarg+1]);
+      int itemp = modify->find_compute(id_temp_k);
+      if (itemp < 0)
+        error->all(FLERR,"Could not find compute heat/flux/va/chunk compute ID");
+      c_temp_k = modify->compute[itemp];
+      if (!c_temp_k->tempbias)
+        error->all(FLERR,"kbias compute does not calculate a velocity bias");
+      iarg += 2;
     } else error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
   }
+  if (c_temp_k != nullptr && !biasflag)
+    error->warning(FLERR,
+        "Kinetic bias specified, without bias keyword. Bias will be ignored.");
+  if (biasflag && c_temp_k == nullptr) c_temp_k = (Compute *)c_temp_c;
 
   c_chunk = dynamic_cast<ComputeChunkAtom *>(modify->compute[ichunk]);
   if (c_chunk == nullptr)
@@ -145,6 +166,9 @@ ComputeHeatFluxVAChunk::~ComputeHeatFluxVAChunk()
   memory->destroy(array);
   memory->destroy(cvalues_local);
 
+  memory->destroy(cfactor);
+  memory->destroy(c_ids);
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -159,6 +183,12 @@ void ComputeHeatFluxVAChunk::allocate()
     memory->grow(cvalues_local,size_array_rows,
         size_array_cols,"heat/flux/va/chunk:cvalues_local");
     cvalues = array;
+
+    // cfactor stores fraction of rij in each segment. Allocate nchunk+2 in case
+    // rij crosses the full region of chunks, with xi and xj outside the region
+    memory->grow(cfactor, nchunk+2, "heat/flux/va/chunk:cfactor");
+    memory->grow(c_ids, nchunk+2, "heat/flux/va/chunk:c_ids");
+
   }
 }
 
@@ -188,16 +218,16 @@ void ComputeHeatFluxVAChunk::init()
     // Only accounts for pair interactions at this stage.
     // Issue a warning if any intramolecular potential or Kspace is defined.
 
-    if (force->bond!=nullptr)
-      error->warning(FLERR,"compute heat/flux/va/chunk does not account for bond potentials");
-    if (force->angle!=nullptr)
-      error->warning(FLERR,"compute heat/flux/va/chunk does not account for angle potentials");
-    if (force->dihedral!=nullptr)
-      error->warning(FLERR,"compute heat/flux/va/chunk does not account for dihedral potentials");
-    if (force->improper!=nullptr)
-      error->warning(FLERR,"compute heat/flux/va/chunk does not account for improper potentials");
-    if (force->kspace!=nullptr)
-      error->warning(FLERR,"compute heat/flux/va/chunk does not account for kspace contributions");
+    if (force->bond!=nullptr) error->warning(FLERR,
+          "compute heat/flux/va/chunk does not account for bond potentials");
+    if (force->angle!=nullptr) error->warning(FLERR,
+        "compute heat/flux/va/chunk does not account for angle potentials");
+    if (force->dihedral!=nullptr) error->warning(FLERR,
+        "compute heat/flux/va/chunk does not account for dihedral potentials");
+    if (force->improper!=nullptr) error->warning(FLERR,
+        "compute heat/flux/va/chunk does not account for improper potentials");
+    if (force->kspace!=nullptr) error->warning(FLERR,
+        "compute heat/flux/va/chunk does not account for kspace contributions");
   }
 
   // request an occasional half neighbor list
@@ -277,6 +307,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
     for (n=0; n<6; n++)
       cvalues_local[m][n] = 0.0;
 
+
   neighbor->build_one(list);
 
   if (!(c_ke->invoked_flag & Compute::INVOKED_PERATOM)) {
@@ -308,29 +339,47 @@ void ComputeHeatFluxVAChunk::compute_flux()
   double fij[3];
   double confpair[3];
   double pairdot;
-  double *vi;
-
-  // cfactor stores fraction of rij in each segment. Allocate nchunk+2 in case
-  // rij crosses the full region of chunks, with xi and xj outside the region
-  double cfactor[nchunk+2];
-  //
-  // c_ids calculation might store one extra value, so overallocate by 1
-  int c_ids[nchunk+3];
+  double vi[3];
+  double vj[3];
 
   // Number of rij segments
   int n_seg;
 
   if (biasflag) {
-    if (c_temp->invoked_scalar != update->ntimestep) c_temp->compute_scalar();
-    c_temp->remove_bias_all();
+    if (c_temp_c->invoked_scalar != update->ntimestep) c_temp_c->compute_scalar();
+    if (c_temp_k->invoked_scalar != update->ntimestep) c_temp_k->compute_scalar();
   }
+
+  // Compute kinetic component and tally average chunk velocities
+  for (i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      int c = ichunk[i]-1;
+      if (c >= 0) {
+        if (biasflag) c_temp_k->remove_bias(i, v[i]);
+
+        double ei = c_ke->vector_atom[i] + c_pe->vector_atom[i];
+        cvalues_local[c][3] += ei * v[i][0];
+        cvalues_local[c][4] += ei * v[i][1];
+        cvalues_local[c][5] += ei * v[i][2];
+
+        if (biasflag) c_temp_k->restore_bias(i, v[i]);
+      }
+    }
+
 
   //Compute configurational contribution
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
 
     xi = x[i];
-    vi = v[i];
+    vi[0] = v[i][0];
+    vi[1] = v[i][1];
+    vi[2] = v[i][2];
+    if (biasflag) {
+      vi[0] -= c_temp_c->vcmall[ichunk[i]-1][0];
+      vi[1] -= c_temp_c->vcmall[ichunk[i]-1][1];
+      vi[2] -= c_temp_c->vcmall[ichunk[i]-1][2];
+    }
     itype = type[i];
     jlist = firstneigh[i];
     jnum = numneigh[i];
@@ -362,11 +411,19 @@ void ComputeHeatFluxVAChunk::compute_flux()
       fij[1] = rij[1] * fpair;
       fij[2] = rij[2] * fpair;
 
-      if (newton_pair || j < nlocal)
-        pairdot = (fij[0]*(vi[0]+v[idj][0]) +
-                   fij[1]*(vi[1]+v[idj][1]) +
-                   fij[2]*(vi[2]+v[idj][2]))*0.5;
-      else
+      if (newton_pair || j < nlocal) {
+        vj[0] = v[idj][0];
+        vj[1] = v[idj][1];
+        vj[2] = v[idj][2];
+        if (biasflag) {
+          vj[0] -= c_temp_c->vcmall[ichunk[idj]-1][0];
+          vj[1] -= c_temp_c->vcmall[ichunk[idj]-1][1];
+          vj[2] -= c_temp_c->vcmall[ichunk[idj]-1][2];
+        }
+        pairdot = (fij[0]*(vi[0]+vj[0]) +
+                   fij[1]*(vi[1]+vj[1]) +
+                   fij[2]*(vi[2]+vj[2]))*0.5;
+      } else
         pairdot = (fij[0]*vi[0] + fij[1]*vi[1] + fij[2]*vi[2])*0.5;
 
       confpair[0] = rij[0] * pairdot;
@@ -384,20 +441,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
       }
     }
   }
-
-  // Kinetic component
-  for (i = 0; i < nlocal; i++)
-    if (mask[i] & groupbit) {
-      int c = ichunk[i]-1;
-      if (c >= 0) {
-        double ei = c_ke->vector_atom[i] + c_pe->vector_atom[i];
-        cvalues_local[c][3] += ei * v[i][0];
-        cvalues_local[c][4] += ei * v[i][1];
-        cvalues_local[c][5] += ei * v[i][2];
-      }
-    }
-
-  if (biasflag) c_temp->restore_bias_all();
 
   for (m = 0; m < nchunk; m++) {
     cvalues_local[m][0] += cvalues_local[m][3];

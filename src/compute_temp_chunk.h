@@ -67,6 +67,8 @@ class ComputeTempChunk : public Compute {
   void kecom(int);
   void internal(int);
   void allocate();
+
+  friend class ComputeHeatFluxVAChunk;
 };
 
 }

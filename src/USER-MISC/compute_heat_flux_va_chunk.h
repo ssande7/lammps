@@ -51,8 +51,9 @@ private:
   int me;
 
   int biasflag;
-  char *id_temp;
-  class Compute *c_temp;
+  char *id_temp_c, *id_temp_k;
+  class ComputeTempChunk *c_temp_c;
+  class Compute *c_temp_k;
 
   char *id_ke, *id_pe;
   class Compute *c_ke, *c_pe;
@@ -62,6 +63,8 @@ private:
   class ComputeChunkAtom *c_chunk;
 
   double **cvalues_local,**cvalues;
+  double *cfactor;
+  int *c_ids;
   class NeighList *list;
 
 };
