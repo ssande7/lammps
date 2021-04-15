@@ -40,12 +40,13 @@ public:
 private:
 
   void compute_flux();
-  int find_crossing(int, int, double *, double *, int *, double *);
-  int crossing_bin1d(int, int, double *, double *, int, int *, double *);
-  int crossing_bin2d(int, int, double *, double *, int *, double *);
-  int crossing_bin3d(int, int, double *, double *, int *, double *);
-  int crossing_binsphere(int, int, double *, double *, int *, double *);
-  int crossing_bincylinder(int, int, double *, double *, int *, double *);
+  int find_crossing(double *, double *, int *, double *);
+  int crossing_bin1d(double *, double *, int, int *, double *);
+  int crossing_bin2d(double *, double *, int *, double *);
+  int crossing_bin3d(double *, double *, int *, double *);
+  int crossing_binsphere(double *, double *, int *, double *);
+  int crossing_bincylinder(double *, double *, int *, double *);
+  int x2chunk(double *);
   void allocate();
 
   int me;

@@ -49,8 +49,10 @@ and *pe-ID*, and the sum is over all atoms in chunk c. The second term is the
 configurational component, and :math:`l_{ij}` is a selector function which gives
 the fraction of the vector :math:`\mathbf{r}_{ij}` within the chunk.  Note that
 this means atoms that are not inside a chunk can still contribute to that
-chunk's heat flux.  The configurational component considers all atom pairs in
-which at least one atom is within the specified compute group.
+chunk's heat flux, including atoms that would otherwise be excluded due to the
+specifacation of a region in compute chunk/atom.  The configurational component
+considers all atom pairs in which at least one atom is within the specified
+compute group.
 
 .. warning::
 
@@ -68,10 +70,10 @@ which at least one atom is within the specified compute group.
 Removal of a velocity bias is supported via the *bias* keyword. It takes the
 ID of a compute of type temp/chunk as an argument (see
 :doc:`compute temp/chunk <compute_temp_chunk>`).  The temp/chunk compute should
-use *chunk-ID* as its chunk/atom compute.  With velocity bias removed,
-:math:`\mathbf{v}_i` in the the kinetic component of the equation for
-:math:`\mathbf{J}_c` is replaced by the peculiar velocity, and the velocity in
-the configurational component becomes
+use *chunk-ID* as its chunk/atom compute, and specify the "com yes" option.
+With velocity bias removed, :math:`\mathbf{v}_i` in the the kinetic component of
+the equation for :math:`\mathbf{J}_c` is replaced by the peculiar velocity, and
+the velocity in the configurational component becomes
 :math:`\left( \mathbf{v}_i - \mathbf{v}_c \right)`, where
 :math:`\mathbf{v}_c` is the center of mass velocity of the chunk as calculated
 by :doc:`compute temp/chunk <compute_temp_chunk>`.  An alternative bias can be
@@ -99,9 +101,8 @@ third assigns chunk IDs to atoms (\ *chunk-ID*\ ).
    calculation, should provide values for all the atoms in the group this
    compute specifies.  That means the other computes could use the same group as
    this compute, or they can just use group "all" (or any group whose atoms are
-   superset of the atoms in this compute's group).  Additionally, the chunk-ID
-   compute should also include all atoms that *interact* with atoms in this
-   compute's group through pairwise forces.  LAMMPS does not check for this.
+   a superset of the atoms in this compute's group).  LAMMPS does not check for
+   this.
 
 In LAMMPS, chunks are collections of atoms defined by a
 :doc:`compute chunk/atom <compute_chunk_atom>` command, which assigns each atom
