@@ -524,54 +524,109 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
   }
   double offset = c_chunk->offset[cdim];
   double invdelta = c_chunk->invdelta[cdim];
+  int nlayers = c_chunk->nlayers[cdim];
   ci = static_cast<int>((xiremap - offset) * invdelta) + 1;
   if (xiremap < offset) ci--;
-  if (ci > c_chunk->nlayers[cdim] || ci < 0) ci = 0;
+  if (ci > nlayers || ci < 0) ci = 0;
   cj = static_cast<int>((xjremap - offset) * invdelta) + 1;
   if (xjremap < offset) cj--;
-  if (cj > c_chunk->nlayers[cdim] || cj < 0) cj = 0;
+  if (cj > nlayers || cj < 0) cj = 0;
 
   // skip if in the same chunk, with exceptions:
   //  * if ci == 0 (not in chunk), rij could still span across chunks
   //  * if periodic and only one chunk (that may not span the full box) rij
   //    could cross the periodic boundary and have a section not in the chunk
-  if (ci == cj && ci > 0 && !(periodicity && c_chunk->nlayers[cdim] == 1)) {
+  double delta = c_chunk->delta[cdim];
+  double rijabs = fabs(rij[dim]);
+  int dir = rij[dim] > 0 ? 1 : -1;
+  double rijinv = 1/rijabs;
+  int n_seg = 0;
+  if (ci == cj) {
+    if (ci == 0) {
+      double upper, lower;
+      if (dir > 0) lower = xiremap;
+      else {
+        lower = xiremap + rij[dim];
+        // lower always inside simulation box
+        if (periodicity && lower < boxlo[dim]) lower += prd[dim];
+      }
+      upper = lower + rijabs;
+      bool wrapped =
+        (periodicity && lower <= offset+prd[dim] && upper >= offset+prd[dim]);
+      if (lower <= offset && upper > offset || wrapped) {
+        // All chunks between xi and xj
+        if (wrapped) offset += prd[dim];
+        if (dir > 0) cfactor[n_seg] = (offset - lower)*rijinv;
+        else cfactor[n_seg] = (upper - offset+nlayers*delta)*rijinv;
+        c_ids[n_seg++] = -1;
+        for (; n_seg <= nlayers; n_seg++) {
+          cfactor[n_seg] = delta*rijinv;
+          c_ids[n_seg] = n_seg-1;
+        }
+        if (dir > 0) cfactor[n_seg] = (upper - offset+nlayers*delta)*rijinv;
+        else cfactor[n_seg] = (offset - lower)*rijinv;
+        c_ids[n_seg++] = -1;
+        return n_seg;
+      }
+    } else if (nlayers == 1 && periodicity && prd[dim] > nlayers*delta) {
+      // Check if wrapping through unchunked zone
+      if (dir > 0 && xiremap + rij[dim] >= boxhi[dim]) {
+        cfactor[0] = (offset+nlayers*delta - xiremap)*rijinv;
+        c_ids[0] = ci-1;
+        cfactor[2] = (xjremap - offset)*rijinv;
+        c_ids[2] = ci-1;
+        cfactor[1] = 1 - cfactor[0] - cfactor[2];
+        c_ids[1] = -1;
+        return 3;
+      } else if (dir < 0 && xiremap + rij[dim] < boxlo[dim]) {
+        cfactor[0] = (xiremap - offset)*rijinv;
+        c_ids[0] = ci-1;
+        cfactor[2] = (offset+nlayers*delta - xjremap)*rijinv;
+        c_ids[2] = ci-1;
+        cfactor[1] = 1 - cfactor[0] - cfactor[2];
+        c_ids[1] = -1;
+        return 3;
+      }
+    }
+
+    // Doesn't cross any other chunks
     cfactor[0] = 1.0;
     c_ids[0] = ci-1;
     return 1;
   }
 
-  int n_seg = 0;
-  int dir = rij[dim] > 0 ? 1 : -1;
-  double delta = c_chunk->delta[cdim];
-  double rijinv = 1/fabs(rij[dim]);
+  double xcovered = 0;
   double intersection;
-  int i = ci-dir;
+  int i = ci - dir;
+
   do {
-    i+=dir;
-    if (periodicity) {
-      if (i < 0) i += c_chunk->nlayers[cdim]+1;
-      if (i > c_chunk->nlayers[cdim]) i -= c_chunk->nlayers[cdim]+1;
-    }
+    i += dir;
+    // No periodicity check for this since it needs to happen in non-periodic
+    // systems when chunks don't cover full system
+    if (i < 0) i = nlayers;
+    if (i > nlayers) i = 0;
 
-    if (i == cj)
-      intersection = (xi[dim]+rij[dim]);
-    else {
-      if (i > 0) intersection = offset+delta*(i+(dir-1)/2);
-      else if (dir < 0) intersection = offset+delta*c_chunk->nlayers[cdim];
-      else /* (dir > 0) */ intersection = offset;
-    }
+    if (i > 0) intersection = offset+delta*(i+(dir-1)/2);
+    else if (dir < 0) intersection = offset+delta*nlayers;
+    else /* (dir > 0) */ intersection = offset;
 
-    if (periodicity) {
-      if (xiremap < boxlo[dim]) xiremap += prd[dim];
-      if (xiremap >= boxhi[dim]) xiremap -= prd[dim];
-    }
-
+    // probably more optimisation to do here - cfactor is just delta * rijinv
+    // for all chunks except first and last
     cfactor[n_seg] = fabs(xiremap-intersection);
+    // if (periodicity && cfactor[n_seg] > prd[dim]/2)
+    //   cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
+
+    if (i == cj && cfactor[n_seg] > rijabs - xcovered) {
+      cfactor[n_seg] = (rijabs - xcovered) * rijinv;
+      c_ids[n_seg] = i-1;
+      n_seg++;
+      break;
+    }
+
     if (periodicity && cfactor[n_seg] > prd[dim]/2)
       cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
-
     if (cfactor[n_seg] > 0) {
+      xcovered += cfactor[n_seg];
       cfactor[n_seg] *= rijinv;
       c_ids[n_seg] = i-1;
       n_seg++;
