@@ -358,7 +358,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
   Pair *pair = force->pair;
   double **cutsq = force->pair->cutsq;
 
-  double *xi;
   double rij[3];
   double fij[3];
   double confpair[3];
@@ -369,10 +368,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
   int n_seg;
 
   // Compute kinetic component
-  // double mvv2e = force->mvv2e;
-  // double *mass = atom->mass;
-  // double *rmass = atom->rmass;
-  // double massone;
   double ei;
   for (i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
@@ -380,10 +375,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
       if (c >= 0) {
         if (biasflag) c_temp_k->remove_bias(i, v[i]);
 
-        // if (rmass) massone = rmass[i];
-        // else massone = mass[type[i]];
-        // ei=massone*mvv2e*0.5*(v[i][0]*v[i][0]+v[i][1]*v[i][1]+v[i][2]*v[i][2]);
-        // ei += c_pe->vector_atom[i];
         ei = c_ke->vector_atom[i] + c_pe->vector_atom[i];
         cvalues_local[c][3] += ei * v[i][0];
         cvalues_local[c][4] += ei * v[i][1];
@@ -397,7 +388,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
 
-    xi = x[i];
     vi[0] = v[i][0];
     vi[1] = v[i][1];
     vi[2] = v[i][2];
@@ -415,9 +405,9 @@ void ComputeHeatFluxVAChunk::compute_flux()
       // skip if neither i nor j are in group
       if (!(mask[i] & groupbit || mask[j] & groupbit)) continue;
 
-      rij[0] = xi[0] - x[j][0];
-      rij[1] = xi[1] - x[j][1];
-      rij[2] = xi[2] - x[j][2];
+      rij[0] = x[i][0] - x[j][0];
+      rij[1] = x[i][1] - x[j][1];
+      rij[2] = x[i][2] - x[j][2];
       rsq = rij[0]*rij[0] + rij[1]*rij[1] + rij[2]*rij[2];
 
       jtype = type[j];
@@ -434,7 +424,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
       confpair[1] = rij[1] * pairdot;
       confpair[2] = rij[2] * pairdot;
 
-      n_seg = find_crossing(xi,x[j],c_ids,cfactor);
+      n_seg = find_crossing(x[i],x[j],c_ids,cfactor);
       for (int ci=0; ci < n_seg; ci++) {
         int c = c_ids[ci];
         if (c >= 0) {
@@ -525,6 +515,10 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
   double offset = c_chunk->offset[cdim];
   double invdelta = c_chunk->invdelta[cdim];
   int nlayers = c_chunk->nlayers[cdim];
+
+  // Get chunks of end points
+  // Can't rely on c_chunk->ichunk since atom may not have a chunk id if it's
+  // from a different group or owned by a different MPI process
   ci = static_cast<int>((xiremap - offset) * invdelta) + 1;
   if (xiremap < offset) ci--;
   if (ci > nlayers || ci < 0) ci = 0;
@@ -532,10 +526,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
   if (xjremap < offset) cj--;
   if (cj > nlayers || cj < 0) cj = 0;
 
-  // skip if in the same chunk, with exceptions:
-  //  * if ci == 0 (not in chunk), rij could still span across chunks
-  //  * if periodic and only one chunk (that may not span the full box) rij
-  //    could cross the periodic boundary and have a section not in the chunk
+  // skip if in the same chunk, catching edge cases
   double delta = c_chunk->delta[cdim];
   double rijabs = fabs(rij[dim]);
   int dir = rij[dim] > 0 ? 1 : -1;
@@ -543,6 +534,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
   int n_seg = 0;
   if (ci == cj) {
     if (ci == 0) {
+      // Could still cross chunks while not being in one
       double upper, lower;
       if (dir > 0) lower = xiremap;
       else {
@@ -568,6 +560,9 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
         c_ids[n_seg++] = -1;
         return n_seg;
       }
+
+    // nlayers == 1 is tricky to handle efficiently in the loop below, so
+    // catch it here
     } else if (nlayers == 1 && periodicity && prd[dim] > nlayers*delta) {
       // Check if wrapping through unchunked zone
       if (dir > 0 && xiremap + rij[dim] >= boxhi[dim]) {
@@ -610,11 +605,11 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
     else if (dir < 0) intersection = offset+delta*nlayers;
     else /* (dir > 0) */ intersection = offset;
 
-    // probably more optimisation to do here - cfactor is just delta * rijinv
-    // for all chunks except first and last
+    // probably more optimisation to do here. cfactor is just delta * rijinv
+    // for all chunks except first, last, and any section of unchunked space
     cfactor[n_seg] = fabs(xiremap-intersection);
-    // if (periodicity && cfactor[n_seg] > prd[dim]/2)
-    //   cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
+    if (periodicity && cfactor[n_seg] > prd[dim]/2)
+      cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
 
     if (i == cj && cfactor[n_seg] > rijabs - xcovered) {
       cfactor[n_seg] = (rijabs - xcovered) * rijinv;
@@ -623,8 +618,6 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
       break;
     }
 
-    if (periodicity && cfactor[n_seg] > prd[dim]/2)
-      cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
     if (cfactor[n_seg] > 0) {
       xcovered += cfactor[n_seg];
       cfactor[n_seg] *= rijinv;
@@ -634,8 +627,6 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
     }
 
   } while (i != cj);
-  // (i != cj) assumes rij <= half prd if direction is periodic, but this is
-  // already assumed in many other places so shouldn't be a problem.
 
   return n_seg;
 }
@@ -731,26 +722,4 @@ int ComputeHeatFluxVAChunk::crossing_bincylinder(
   error->all(FLERR, "Cylinder binning is currently unimplemented in "
       "compute heat/flux/va/chunk");
   return 0;
-}
-
-/*------------------------------------------------------------------------*/
-
-int ComputeHeatFluxVAChunk::x2chunk(double *x) {
-  int ci;
-
-  if (c_chunk->which == ArgInfo::BINSPHERE) {
-    error->all(FLERR, "Spherical binning is currently unimplemented in "
-        "compute heat/flux/va/chunk");
-    return -1;
-  }
-  if (c_chunk->which == ArgInfo::BINCYLINDER) {
-    error->all(FLERR, "Cylinder binning is currently unimplemented in "
-        "compute heat/flux/va/chunk");
-    return -1;
-  }
-  if (c_chunk->which == ArgInfo::BIN1D) {
-
-  }
-
-  return ci;
 }
