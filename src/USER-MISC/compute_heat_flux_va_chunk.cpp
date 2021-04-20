@@ -50,24 +50,19 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
 
   MPI_Comm_rank(world,&me);
 
-  id_ke = utils::strdup(arg[3]);
-  id_pe = utils::strdup(arg[4]);
+  id_pe = utils::strdup(arg[3]);
 
   // KE and PE computes
 
-  int ike = modify->find_compute(id_ke);
   int ipe = modify->find_compute(id_pe);
-  if (ike < 0 || ipe < 0)
+  if (ipe < 0)
     error->all(FLERR,"Could not find compute heat/flux/va/chunk compute ID");
-  if (strcmp(modify->compute[ike]->style,"ke/atom") != 0)
-    error->all(FLERR,
-        "Compute heat/flux/va/chunk compute ID does not compute ke/atom");
   if (modify->compute[ipe]->peatomflag == 0)
     error->all(FLERR,"Compute heat/flux compute ID does not compute pe/atom");
 
   // Chunk compute
 
-  id_chunk = utils::strdup(arg[5]);
+  id_chunk = utils::strdup(arg[4]);
   int ichunk = modify->find_compute(id_chunk);
   if (ichunk < 0) error->all(FLERR,
       "Chunk/atom compute does not exist for compute heat/flux/va/chunk");
@@ -77,7 +72,7 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
   biasflag = NOBIAS;
   c_temp_c = nullptr;
   c_temp_k = nullptr;
-  int iarg = 6;
+  int iarg = 5;
   while (narg > iarg) {
     if (strcmp(arg[iarg],"bias")==0) {
       biasflag = BIAS;
@@ -145,7 +140,6 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
         "results when compute chunk/atom defines a region if that region "
         "is not aligned to chunk boundaries.");
 
-  c_ke = modify->compute[ike];
   c_pe = modify->compute[ipe];
 
   array_flag = 1;
@@ -326,10 +320,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
     for (n=0; n<6; n++)
       cvalues_local[m][n] = 0.0;
 
-  if (!(c_ke->invoked_flag & Compute::INVOKED_PERATOM)) {
-    c_ke->compute_peratom();
-    c_ke->invoked_flag |= Compute::INVOKED_PERATOM;
-  }
   if (!(c_pe->invoked_flag & Compute::INVOKED_PERATOM)) {
     c_pe->compute_peratom();
     c_pe->invoked_flag |= Compute::INVOKED_PERATOM;
@@ -368,6 +358,9 @@ void ComputeHeatFluxVAChunk::compute_flux()
   int n_seg;
 
   // Compute kinetic component
+  double massone;
+  double *rmass = atom->rmass;
+  double *mass = atom->mass;
   double ei;
   for (i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
@@ -375,7 +368,12 @@ void ComputeHeatFluxVAChunk::compute_flux()
       if (c >= 0) {
         if (biasflag) c_temp_k->remove_bias(i, v[i]);
 
-        ei = c_ke->vector_atom[i] + c_pe->vector_atom[i];
+        // Need peculiar kinetic energy
+        if (rmass) massone = rmass[i];
+        else massone = mass[type[i]];
+        ei = massone*(v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2])
+             + c_pe->vector_atom[i];
+
         cvalues_local[c][3] += ei * v[i][0];
         cvalues_local[c][4] += ei * v[i][1];
         cvalues_local[c][5] += ei * v[i][2];

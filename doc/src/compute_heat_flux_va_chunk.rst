@@ -8,11 +8,10 @@ Syntax
 
 .. parsed-literal::
 
-   compute ID group-ID heat/flux/va/chunk ke-ID pe-ID chunk-ID keyword args
+   compute ID group-ID heat/flux/va/chunk pe-ID chunk-ID keyword args
 
 * ID, group-ID are documented in :doc:`compute <compute>` command
 * heat/flux/va/chunk = style name of this compute command
-* ke-ID = ID of a compute that calculates per-atom kinetic energy
 * pe-ID = ID of a compute that calculates per-atom potential energy
 * chunk-ID = ID of a compute chunk/atom command
 * zero or more keyword/arg pairs may be appended
@@ -29,9 +28,9 @@ Examples
 
 .. code-block:: LAMMPS
 
-   compute myFlux all heat/flux/va/chunk myKE myPE myChunks
-   compute myFlux all heat/flux/va/chunk myKE myPE myChunks bias myTempChunk
-   compute myFlux all heat/flux/va/chunk myKE myPE myChunks bias myTempChunk kbias myTempDeform
+   compute myFlux all heat/flux/va/chunk myPE myChunks
+   compute myFlux all heat/flux/va/chunk myPE myChunks bias myTempChunk
+   compute myFlux all heat/flux/va/chunk myPE myChunks bias myTempChunk kbias myTempDeform
 
 Description
 """""""""""
@@ -90,10 +89,11 @@ calculated using the same velocity bias.
    obtained when there is minimal difference in the local streaming velocity
    within a chunk.
 
-The compute takes three arguments which are IDs of other
-:doc:`computes <compute>`.  One calculates per-atom kinetic energy
-(\ *ke-ID*\ ), one calculates per-atom potential energy (\ *pe-ID)*\ , and the
-third assigns chunk IDs to atoms (\ *chunk-ID*\ ).
+The compute takes two arguments which are IDs of other
+:doc:`computes <compute>`.  One calculates per-atom  potential energy
+(\ *pe-ID)*\ , and the other assigns chunk IDs to atoms (\ *chunk-ID*\ ). Unlike
+:doc:`compute heat/flux <compute_heat_flux>`, this compute calculates kinetic
+energy internally, accounting for a velocity bias if required.
 
 .. note::
 

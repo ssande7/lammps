@@ -56,8 +56,8 @@ private:
   class ComputeTempChunk *c_temp_c;
   class Compute *c_temp_k;
 
-  char *id_ke, *id_pe;
-  class Compute *c_ke, *c_pe;
+  char *id_pe;
+  class Compute *c_pe;
 
   int nchunk,maxchunk;
   char *id_chunk;
