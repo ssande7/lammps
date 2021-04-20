@@ -40,10 +40,10 @@ public:
 private:
 
   void compute_flux();
-  int find_crossing(double *, double *, int *, double *);
-  int crossing_bin1d(double *, double *, int, int *, double *);
-  int crossing_bin2d(double *, double *, int *, double *);
-  int crossing_bin3d(double *, double *, int *, double *);
+  int find_crossing(double *, double *);
+  int crossing_bin1d(double *, double *, int, int *, double *, int **);
+  int crossing_bin2d(double *, double *, int *, double *, int **);
+  int crossing_bin3d(double *, double *, int *, double *, int **);
   int crossing_binsphere(double *, double *, int *, double *);
   int crossing_bincylinder(double *, double *, int *, double *);
   int x2chunk(double *);
@@ -66,6 +66,7 @@ private:
   double **cvalues_local,**cvalues;
   double *cfactor;
   int *c_ids;
+  int **c_wrap;
   class NeighList *list;
 
 };

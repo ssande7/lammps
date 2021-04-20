@@ -43,7 +43,7 @@ enum{ONCE,NFREQ,EVERY};              // used in several files
 ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
     LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg), cvalues(nullptr), cvalues_local(nullptr),
-  cfactor(nullptr), c_ids(nullptr)
+  cfactor(nullptr), c_ids(nullptr), c_wrap(nullptr)
 {
   if (narg < 6) error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
 
@@ -167,6 +167,7 @@ ComputeHeatFluxVAChunk::~ComputeHeatFluxVAChunk()
 
   memory->destroy(cfactor);
   memory->destroy(c_ids);
+  if (domain->deform_vremap) memory->destroy(c_wrap);
 
 }
 
@@ -187,7 +188,8 @@ void ComputeHeatFluxVAChunk::allocate()
     // rij crosses the full region of chunks, with xi and xj outside the region
     memory->grow(cfactor, nchunk+2, "heat/flux/va/chunk:cfactor");
     memory->grow(c_ids, nchunk+2, "heat/flux/va/chunk:c_ids");
-
+    if (domain->deform_vremap)
+      memory->grow(c_wrap, nchunk+2, 3, "heat/flux/va/chunk:c_wrap");
   }
 }
 
@@ -422,12 +424,23 @@ void ComputeHeatFluxVAChunk::compute_flux()
       confpair[1] = rij[1] * pairdot;
       confpair[2] = rij[2] * pairdot;
 
-      n_seg = find_crossing(x[i],x[j],c_ids,cfactor);
+      n_seg = find_crossing(x[i],x[j]);
       for (int ci=0; ci < n_seg; ci++) {
         int c = c_ids[ci];
         if (c >= 0) {
           if (biasflag) {
-            double *vcm = c_temp_c->vcmall[c];
+            double vcm[3] = {c_temp_c->vcmall[c][0],
+                             c_temp_c->vcmall[c][1],
+                             c_temp_c->vcmall[c][2]};
+            if (domain->deform_vremap) {
+              double *h_rate = domain->h_rate;
+              // TODO: check wrap_i and wrap_j are correct
+              vcm[0] += h_rate[0]*c_wrap[ci][0] +
+                        h_rate[5]*c_wrap[ci][1] +
+                        h_rate[4]*c_wrap[ci][2];
+              vcm[1] += h_rate[1]*c_wrap[ci][1] + h_rate[3]*c_wrap[ci][2];
+              vcm[2] += h_rate[2]*c_wrap[ci][2];
+            }
             pairdot_c = -(fij[0]*vcm[0] + fij[1]*vcm[1] + fij[2]*vcm[2])*0.5;
           }
           cvalues_local[c][0] += cfactor[ci]*(confpair[0] + rij[0]*pairdot_c);
@@ -448,11 +461,12 @@ void ComputeHeatFluxVAChunk::compute_flux()
 }
 
 /*------------------------------------------------------------------------
-  calculate fraction of vector rij in each chunk it crosses through
+  Calculate fraction of vector rij in each chunk it crosses through, and
+  whether reaching that chunk requires wrapping around a periodic boundary.
+  Output stored in c_ids, cfactor and c_wrap
   -------------------------------------------------------------------------*/
 
-int ComputeHeatFluxVAChunk::find_crossing(
-    double *xi_in, double *xj_in, int *c_ids, double *cfactor)
+int ComputeHeatFluxVAChunk::find_crossing(double *xi_in, double *xj_in)
 {
   double xi[3] = {xi_in[0], xi_in[1], xi_in[2]};
   double xj[3] = {xj_in[0], xj_in[1], xj_in[2]};
@@ -470,13 +484,13 @@ int ComputeHeatFluxVAChunk::find_crossing(
     return crossing_bincylinder(xi, rij, c_ids, cfactor);
 
   if (c_chunk->which == ArgInfo::BIN1D)
-    return crossing_bin1d(xi, rij, 0, c_ids, cfactor);
+    return crossing_bin1d(xi, rij, 0, c_ids, cfactor, c_wrap);
 
   if (c_chunk->which == ArgInfo::BIN2D)
-    return crossing_bin2d(xi, rij, c_ids, cfactor);
+    return crossing_bin2d(xi, rij, c_ids, cfactor, c_wrap);
 
   if (c_chunk->which == ArgInfo::BIN3D)
-    return crossing_bin3d(xi, rij, c_ids, cfactor);
+    return crossing_bin3d(xi, rij, c_ids, cfactor, c_wrap);
 
   error->all(FLERR,
       "Unsupported compute chunk/atom style. This should never be reached.");
@@ -487,7 +501,7 @@ int ComputeHeatFluxVAChunk::find_crossing(
 /*------------------------------------------------------------------------*/
 
 int ComputeHeatFluxVAChunk::crossing_bin1d(
-    double *xi, double *rij, int cdim, int *c_ids, double *cfactor)
+    double *xi, double *rij, int cdim, int *c_ids, double *cfactor, int **c_wrap)
 {
   int dim = c_chunk->dim[cdim];
   int ci, cj;
@@ -495,6 +509,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
   double xjremap = xiremap+rij[dim];
   int periodicity = domain->periodicity[dim];
   double *boxlo,*boxhi,*prd;
+  int wrap_i = 0, wrap_j = 0;
   if (periodicity) {
     if (c_chunk->scaleflag == REDUCED) {
       boxlo = domain->boxlo_lamda;
@@ -505,10 +520,10 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
       boxhi = domain->boxhi;
       prd = domain->prd;
     }
-    if (xiremap < boxlo[dim]) xiremap += prd[dim];
-    if (xiremap >= boxhi[dim]) xiremap -= prd[dim];
-    if (xjremap < boxlo[dim]) xjremap += prd[dim];
-    if (xjremap >= boxhi[dim]) xjremap -= prd[dim];
+    if (xiremap < boxlo[dim]) {xiremap += prd[dim]; wrap_i = -1;}
+    if (xiremap >= boxhi[dim]) {xiremap -= prd[dim]; wrap_i = 1;}
+    if (xjremap < boxlo[dim]) {xjremap += prd[dim]; wrap_j = -1;}
+    if (xjremap >= boxhi[dim]) {xjremap -= prd[dim]; wrap_j = 1;}
   }
   double offset = c_chunk->offset[cdim];
   double invdelta = c_chunk->invdelta[cdim];
@@ -552,6 +567,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
         for (; n_seg <= nlayers; n_seg++) {
           cfactor[n_seg] = delta*rijinv;
           c_ids[n_seg] = n_seg-1;
+          if (domain->deform_vremap) c_wrap[n_seg][dim] = dir;
         }
         if (dir > 0) cfactor[n_seg] = (upper - offset+nlayers*delta)*rijinv;
         else cfactor[n_seg] = (offset - lower)*rijinv;
@@ -559,8 +575,8 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
         return n_seg;
       }
 
-    // nlayers == 1 is tricky to handle efficiently in the loop below, so
-    // catch it here
+    // nlayers == 1 is tricky to handle efficiently
+    // in the loop below, so catch it here
     } else if (nlayers == 1 && periodicity && prd[dim] > nlayers*delta) {
       // Check if wrapping through unchunked zone
       if (dir > 0 && xiremap + rij[dim] >= boxhi[dim]) {
@@ -568,6 +584,10 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
         c_ids[0] = ci-1;
         cfactor[2] = (xjremap - offset)*rijinv;
         c_ids[2] = ci-1;
+        if (domain->deform_vremap) {
+          c_wrap[0][dim] = wrap_i;
+          c_wrap[2][dim] = wrap_j;
+        }
         cfactor[1] = 1 - cfactor[0] - cfactor[2];
         c_ids[1] = -1;
         return 3;
@@ -576,6 +596,10 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
         c_ids[0] = ci-1;
         cfactor[2] = (offset+nlayers*delta - xjremap)*rijinv;
         c_ids[2] = ci-1;
+        if (domain->deform_vremap) {
+          c_wrap[0][dim] = wrap_i;
+          c_wrap[2][dim] = wrap_j;
+        }
         cfactor[1] = 1 - cfactor[0] - cfactor[2];
         c_ids[1] = -1;
         return 3;
@@ -585,12 +609,14 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
     // Doesn't cross any other chunks
     cfactor[0] = 1.0;
     c_ids[0] = ci-1;
+    if (domain->deform_vremap) c_wrap[0][dim] = wrap_i;
     return 1;
   }
 
   double xcovered = 0;
   double intersection;
   int i = ci - dir;
+  int cur_wrap = wrap_i;
 
   do {
     i += dir;
@@ -606,12 +632,15 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
     // probably more optimisation to do here. cfactor is just delta * rijinv
     // for all chunks except first, last, and any section of unchunked space
     cfactor[n_seg] = fabs(xiremap-intersection);
-    if (periodicity && cfactor[n_seg] > prd[dim]/2)
+    if (periodicity && cfactor[n_seg] > prd[dim]/2) {
       cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
+      cur_wrap += dir;
+    }
 
     if (i == cj && cfactor[n_seg] > rijabs - xcovered) {
       cfactor[n_seg] = (rijabs - xcovered) * rijinv;
       c_ids[n_seg] = i-1;
+      if (domain->deform_vremap) c_wrap[n_seg][dim] = cur_wrap;
       n_seg++;
       break;
     }
@@ -620,6 +649,7 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
       xcovered += cfactor[n_seg];
       cfactor[n_seg] *= rijinv;
       c_ids[n_seg] = i-1;
+      if (domain->deform_vremap) c_wrap[n_seg][dim] = cur_wrap;
       n_seg++;
       xiremap = intersection;
     }
@@ -632,26 +662,31 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
 /*------------------------------------------------------------------------*/
 
 int ComputeHeatFluxVAChunk::crossing_bin2d(
-    double *xi, double *rij, int *c_ids, double *cfactor)
+    double *xi, double *rij, int *c_ids, double *cfactor, int **c_wrap)
 {
   int *nlayers = c_chunk->nlayers;
   int *c_ids1 = new int[nlayers[0]];
+  int **c_wrap1;
+  if (domain->deform_vremap)
+    memory->create(c_wrap1, nlayers[0], 3, "heat/flux/va/chunk:c_wrap2d");
   double *cfactor1 = new double[nlayers[0]];
-  int n_seg1 = crossing_bin1d(xi,rij,0,c_ids1,cfactor1);
+  int n_seg1 = crossing_bin1d(xi,rij,0,c_ids1,cfactor1,c_wrap1);
 
   if (n_seg1 == 0) return 0;
 
   int n_seg = 0;
+  int dim1 = c_chunk->dim[0];
   int dim2 = c_chunk->dim[1];
   double xi2[3] = {xi[0], xi[1], xi[2]};
   double rij2[3] = {0.0, 0.0, 0.0};
   for (int i1 = 0; i1 < n_seg1; i1++) {
     xi2[dim2] += rij2[dim2];
     rij2[dim2] = rij[dim2]*cfactor1[i1];
-    int n_new=crossing_bin1d(xi2,rij2,1,&c_ids[n_seg],&cfactor[n_seg]);
+    int n_new=crossing_bin1d(xi2,rij2,1,&c_ids[n_seg],&cfactor[n_seg],&c_wrap[n_seg]);
 
     for (int n = n_seg; n < n_seg+n_new; n++) {
       cfactor[n] *= cfactor1[i1];
+      if (domain->deform_vremap) c_wrap[n][dim1] = c_wrap1[i1][dim1];
       if (c_ids[n] < 0 || c_ids1[i1] < 0)
         c_ids[n] = -1;
       else
@@ -662,22 +697,28 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
 
   delete [] c_ids1;
   delete [] cfactor1;
+  if (domain->deform_vremap) memory->destroy(c_wrap1);
   return n_seg;
 }
 
 /*------------------------------------------------------------------------*/
 
 int ComputeHeatFluxVAChunk::crossing_bin3d(
-    double *xi, double *rij, int *c_ids, double *cfactor)
+    double *xi, double *rij, int *c_ids, double *cfactor, int **c_wrap)
 {
   int *nlayers = c_chunk->nlayers;
   int *c_ids12 = new int[nlayers[0]*nlayers[1]];
-  double *cfactor12 = new double[nlayers[0]];
-  int n_seg12 = crossing_bin2d(xi,rij,c_ids12,cfactor12);
+  int **c_wrap12;
+  if (domain->deform_vremap)
+    memory->create(c_wrap12, nlayers[0]*nlayers[1], 3, "heat/flux/va/chunk:c_wrap3d");
+  double *cfactor12 = new double[nlayers[0]*nlayers[1]];
+  int n_seg12 = crossing_bin2d(xi,rij,c_ids12,cfactor12,c_wrap12);
 
   if (n_seg12 == 0) return 0;
 
   int n_seg = 0;
+  int dim1 = c_chunk->dim[0];
+  int dim2 = c_chunk->dim[1];
   int dim3 = c_chunk->dim[2];
   double xi3[3], rij3[3];
   xi3[0] = xi[0]; xi3[1] = xi[1]; xi3[2] = xi[2];
@@ -686,9 +727,13 @@ int ComputeHeatFluxVAChunk::crossing_bin3d(
     xi3[dim3] += rij3[dim3];
     rij3[dim3] = rij[dim3]*cfactor12[i12];
 
-    int n_new=crossing_bin1d(xi3,rij3,2,&c_ids[n_seg],&cfactor[n_seg]);
+    int n_new=crossing_bin1d(xi3,rij3,2,&c_ids[n_seg],&cfactor[n_seg],&c_wrap[n_seg]);
     for (int n = n_seg; n < n_seg+n_new; n++) {
       cfactor[n] *= cfactor12[i12];
+      if (domain->deform_vremap) {
+        c_wrap[n][dim1] = c_wrap12[i12][dim1];
+        c_wrap[n][dim2] = c_wrap12[i12][dim2];
+      }
       if (c_ids[n] < 0 || c_ids12[i12] < 0)
         c_ids[n] = -1;
       else
@@ -699,6 +744,7 @@ int ComputeHeatFluxVAChunk::crossing_bin3d(
 
   delete [] c_ids12;
   delete [] cfactor12;
+  if (domain->deform_vremap) memory->destroy(c_wrap12);
   return n_seg;
 }
 
