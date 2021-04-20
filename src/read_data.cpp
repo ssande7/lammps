@@ -11,10 +11,6 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-// lmptype.h must be first b/c this file uses MAXBIGINT and includes mpi.h
-// due to OpenMPI bug which sets INT64_MAX via its mpi.h
-//   before lmptype.h can set flags to insure it is done correctly
-
 #include "read_data.h"
 
 #include "angle.h"
@@ -66,7 +62,7 @@ const char *suffixes[] = {"/cuda","/gpu","/opt","/omp","/kk",
 
 /* ---------------------------------------------------------------------- */
 
-ReadData::ReadData(LAMMPS *lmp) : Pointers(lmp)
+ReadData::ReadData(LAMMPS *lmp) : Command(lmp)
 {
   MPI_Comm_rank(world,&me);
   line = new char[MAXLINE];
@@ -1954,13 +1950,12 @@ int ReadData::reallocate(int **pcount, int cmax, int amax)
 
 void ReadData::open(char *file)
 {
-  compressed = 0;
-  char *suffix = file + strlen(file) - 3;
-  if (suffix > file && strcmp(suffix,".gz") == 0) compressed = 1;
-  if (!compressed) fp = fopen(file,"r");
-  else {
+  if (utils::strmatch(file,"\\.gz$")) {
+    compressed = 1;
+
 #ifdef LAMMPS_GZIP
-    std::string gunzip = fmt::format("gzip -c -d {}",file);
+    auto gunzip = fmt::format("gzip -c -d {}",file);
+
 #ifdef _WIN32
     fp = _popen(gunzip.c_str(),"rb");
 #else
@@ -1968,8 +1963,11 @@ void ReadData::open(char *file)
 #endif
 
 #else
-    error->one(FLERR,"Cannot open gzipped file: " + utils::getsyserror());
+    error->one(FLERR,"Cannot open gzipped file without gzip support");
 #endif
+  } else {
+    compressed = 0;
+    fp = fopen(file,"r");
   }
 
   if (fp == nullptr)
