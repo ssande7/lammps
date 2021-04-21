@@ -41,7 +41,8 @@ private:
 
   void compute_flux();
   int find_crossing(double *, double *);
-  int crossing_bin1d(double *, double *, int, int *, double *, int **);
+  template<int>
+  int crossing_bin1d(double *, double *, int *, double *, int **);
   int crossing_bin2d(double *, double *, int *, double *, int **);
   int crossing_bin3d(double *, double *, int *, double *, int **);
   int crossing_binsphere(double *, double *, int *, double *);
@@ -50,6 +51,7 @@ private:
   void allocate();
 
   int me;
+  int deform_vremap;
 
   int biasflag;
   char *id_temp_c, *id_temp_k;
@@ -67,6 +69,8 @@ private:
   double *cfactor, *cfactor2d, *cfactor3d;
   int *c_ids, *c_ids2d, *c_ids3d;
   int **c_wrap, **c_wrap2d, **c_wrap3d;
+  double c_hi[3];
+  bool novoid[3];
   class NeighList *list;
 
 };
