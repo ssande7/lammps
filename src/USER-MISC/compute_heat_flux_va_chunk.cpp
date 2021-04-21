@@ -434,7 +434,6 @@ void ComputeHeatFluxVAChunk::compute_flux()
                              c_temp_c->vcmall[c][2]};
             if (domain->deform_vremap) {
               double *h_rate = domain->h_rate;
-              // TODO: check wrap_i and wrap_j are correct
               vcm[0] += h_rate[0]*c_wrap[ci][0] +
                         h_rate[5]*c_wrap[ci][1] +
                         h_rate[4]*c_wrap[ci][2];
@@ -566,7 +565,8 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
         c_ids[n_seg++] = -1;
         for (; n_seg <= nlayers; n_seg++) {
           cfactor[n_seg] = delta*rijinv;
-          c_ids[n_seg] = n_seg-1;
+          if (dir > 0) c_ids[n_seg] = n_seg-1;
+          else c_ids[n_seg] = nlayers - n_seg;
           if (domain->deform_vremap) c_wrap[n_seg][dim] = dir;
         }
         if (dir > 0) cfactor[n_seg] = (upper - offset+nlayers*delta)*rijinv;
@@ -632,15 +632,16 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
     // probably more optimisation to do here. cfactor is just delta * rijinv
     // for all chunks except first, last, and any section of unchunked space
     cfactor[n_seg] = fabs(xiremap-intersection);
-    if (periodicity && cfactor[n_seg] > prd[dim]/2) {
-      cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
-      cur_wrap += dir;
-    }
+    bool wrapped = periodicity && cfactor[n_seg] > prd[dim]/2;
+    if (wrapped) cfactor[n_seg] = fabs(prd[dim] - cfactor[n_seg]);
 
     if (i == cj && cfactor[n_seg] > rijabs - xcovered) {
       cfactor[n_seg] = (rijabs - xcovered) * rijinv;
       c_ids[n_seg] = i-1;
-      if (domain->deform_vremap) c_wrap[n_seg][dim] = cur_wrap;
+      if (domain->deform_vremap) {
+        if (wrapped) cur_wrap += dir;
+        c_wrap[n_seg][dim] = cur_wrap;
+      }
       n_seg++;
       break;
     }
@@ -649,7 +650,10 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
       xcovered += cfactor[n_seg];
       cfactor[n_seg] *= rijinv;
       c_ids[n_seg] = i-1;
-      if (domain->deform_vremap) c_wrap[n_seg][dim] = cur_wrap;
+      if (domain->deform_vremap) {
+        if (wrapped) cur_wrap += dir;
+        c_wrap[n_seg][dim] = cur_wrap;
+      }
       n_seg++;
       xiremap = intersection;
     }
