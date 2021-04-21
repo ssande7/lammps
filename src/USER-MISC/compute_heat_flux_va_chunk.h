@@ -64,9 +64,9 @@ private:
   class ComputeChunkAtom *c_chunk;
 
   double **cvalues_local,**cvalues;
-  double *cfactor;
-  int *c_ids;
-  int **c_wrap;
+  double *cfactor, *cfactor2d, *cfactor3d;
+  int *c_ids, *c_ids2d, *c_ids3d;
+  int **c_wrap, **c_wrap2d, **c_wrap3d;
   class NeighList *list;
 
 };

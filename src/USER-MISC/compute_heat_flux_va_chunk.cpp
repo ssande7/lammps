@@ -43,7 +43,9 @@ enum{ONCE,NFREQ,EVERY};              // used in several files
 ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
     LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg), cvalues(nullptr), cvalues_local(nullptr),
-  cfactor(nullptr), c_ids(nullptr), c_wrap(nullptr)
+  cfactor(nullptr), cfactor2d(nullptr), cfactor3d(nullptr),
+  c_ids(nullptr), c_ids2d(nullptr), c_ids3d(nullptr),
+  c_wrap(nullptr), c_wrap2d(nullptr), c_wrap3d(nullptr)
 {
   if (narg < 6) error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
 
@@ -151,9 +153,6 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
   array = nullptr;
   maxchunk = 0;
   nchunk = 1;
-  allocate();
-  cvalues = array;
-
 
 }
 
@@ -166,8 +165,16 @@ ComputeHeatFluxVAChunk::~ComputeHeatFluxVAChunk()
   memory->destroy(cvalues_local);
 
   memory->destroy(cfactor);
+  if (cfactor2d) memory->destroy(cfactor2d);
+  if (cfactor3d) memory->destroy(cfactor3d);
+
   memory->destroy(c_ids);
-  if (domain->deform_vremap) memory->destroy(c_wrap);
+  if (c_ids2d) memory->destroy(c_ids2d);
+  if (c_ids3d) memory->destroy(c_ids3d);
+
+  if (c_wrap) memory->destroy(c_wrap);
+  if (c_wrap2d) memory->destroy(c_wrap2d);
+  if (c_wrap3d) memory->destroy(c_wrap3d);
 
 }
 
@@ -190,6 +197,21 @@ void ComputeHeatFluxVAChunk::allocate()
     memory->grow(c_ids, nchunk+2, "heat/flux/va/chunk:c_ids");
     if (domain->deform_vremap)
       memory->grow(c_wrap, nchunk+2, 3, "heat/flux/va/chunk:c_wrap");
+
+    if (c_chunk->which == ArgInfo::BIN2D || c_chunk->which == ArgInfo::BIN3D) {
+      int n = c_chunk->nlayers[0];
+      memory->grow(cfactor2d,n+2,"heat/flux/va/chunk:cfactor2d");
+      memory->grow(c_ids2d,n+2,"heat/flux/va/chunk:c_ids2d");
+      if (domain->deform_vremap)
+        memory->grow( c_wrap2d,n+2,3,"heat/flux/va/chunk:c_wrap2d");
+    }
+    if (c_chunk->which == ArgInfo::BIN3D) {
+      int n = c_chunk->nlayers[0]*c_chunk->nlayers[1];
+      memory->grow(cfactor3d,n+2,"heat/flux/va/chunk:cfactor3d");
+      memory->grow(c_ids3d,n+2,"heat/flux/va/chunk:c_ids3d");
+      if (domain->deform_vremap)
+        memory->grow(c_wrap3d,n+2,3,"heat/flux/va/chunk:c_wrap3d");
+    }
   }
 }
 
@@ -253,6 +275,8 @@ void ComputeHeatFluxVAChunk::setup()
                      "compute of compute heat/flux/va/chunk");
   nchunk = c_chunk->setup_chunks();
   allocate();
+  cvalues = array;
+
   c_chunk->bin_volumes();
 }
 
@@ -617,13 +641,17 @@ int ComputeHeatFluxVAChunk::crossing_bin1d(
   double intersection;
   int i = ci - dir;
   int cur_wrap = wrap_i;
+  bool novoid = periodicity && delta*nlayers >= prd[dim];
 
   do {
     i += dir;
     // No periodicity check for this since it needs to happen in non-periodic
     // systems when chunks don't cover full system
-    if (i < 0) i = nlayers;
-    if (i > nlayers) i = 0;
+    if (i < 0 || (i == 0 && novoid)) i = nlayers;
+    if (i > nlayers) {
+      if (novoid) i = 1;
+      else i = 0;
+    }
 
     if (i > 0) intersection = offset+delta*(i+(dir-1)/2);
     else if (dir < 0) intersection = offset+delta*nlayers;
@@ -669,12 +697,7 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
     double *xi, double *rij, int *c_ids, double *cfactor, int **c_wrap)
 {
   int *nlayers = c_chunk->nlayers;
-  int *c_ids1 = new int[nlayers[0]];
-  int **c_wrap1;
-  if (domain->deform_vremap)
-    memory->create(c_wrap1, nlayers[0], 3, "heat/flux/va/chunk:c_wrap2d");
-  double *cfactor1 = new double[nlayers[0]];
-  int n_seg1 = crossing_bin1d(xi,rij,0,c_ids1,cfactor1,c_wrap1);
+  int n_seg1 = crossing_bin1d(xi,rij,0,c_ids2d,cfactor2d,c_wrap2d);
 
   if (n_seg1 == 0) return 0;
 
@@ -685,23 +708,20 @@ int ComputeHeatFluxVAChunk::crossing_bin2d(
   double rij2[3] = {0.0, 0.0, 0.0};
   for (int i1 = 0; i1 < n_seg1; i1++) {
     xi2[dim2] += rij2[dim2];
-    rij2[dim2] = rij[dim2]*cfactor1[i1];
+    rij2[dim2] = rij[dim2]*cfactor2d[i1];
     int n_new=crossing_bin1d(xi2,rij2,1,&c_ids[n_seg],&cfactor[n_seg],&c_wrap[n_seg]);
 
     for (int n = n_seg; n < n_seg+n_new; n++) {
-      cfactor[n] *= cfactor1[i1];
-      if (domain->deform_vremap) c_wrap[n][dim1] = c_wrap1[i1][dim1];
-      if (c_ids[n] < 0 || c_ids1[i1] < 0)
+      cfactor[n] *= cfactor2d[i1];
+      if (domain->deform_vremap) c_wrap[n][dim1] = c_wrap2d[i1][dim1];
+      if (c_ids[n] < 0 || c_ids2d[i1] < 0)
         c_ids[n] = -1;
       else
-        c_ids[n] += c_ids1[i1]*nlayers[1];
+        c_ids[n] += c_ids2d[i1]*nlayers[1];
     }
     n_seg += n_new;
   }
 
-  delete [] c_ids1;
-  delete [] cfactor1;
-  if (domain->deform_vremap) memory->destroy(c_wrap1);
   return n_seg;
 }
 
@@ -711,12 +731,7 @@ int ComputeHeatFluxVAChunk::crossing_bin3d(
     double *xi, double *rij, int *c_ids, double *cfactor, int **c_wrap)
 {
   int *nlayers = c_chunk->nlayers;
-  int *c_ids12 = new int[nlayers[0]*nlayers[1]];
-  int **c_wrap12;
-  if (domain->deform_vremap)
-    memory->create(c_wrap12, nlayers[0]*nlayers[1], 3, "heat/flux/va/chunk:c_wrap3d");
-  double *cfactor12 = new double[nlayers[0]*nlayers[1]];
-  int n_seg12 = crossing_bin2d(xi,rij,c_ids12,cfactor12,c_wrap12);
+  int n_seg12 = crossing_bin2d(xi,rij,c_ids3d,cfactor3d,c_wrap3d);
 
   if (n_seg12 == 0) return 0;
 
@@ -729,26 +744,23 @@ int ComputeHeatFluxVAChunk::crossing_bin3d(
   rij3[0] = rij3[1] = rij3[2] = 0;
   for (int i12 = 0; i12 < n_seg12; i12++) {
     xi3[dim3] += rij3[dim3];
-    rij3[dim3] = rij[dim3]*cfactor12[i12];
+    rij3[dim3] = rij[dim3]*cfactor3d[i12];
 
     int n_new=crossing_bin1d(xi3,rij3,2,&c_ids[n_seg],&cfactor[n_seg],&c_wrap[n_seg]);
     for (int n = n_seg; n < n_seg+n_new; n++) {
-      cfactor[n] *= cfactor12[i12];
+      cfactor[n] *= cfactor3d[i12];
       if (domain->deform_vremap) {
-        c_wrap[n][dim1] = c_wrap12[i12][dim1];
-        c_wrap[n][dim2] = c_wrap12[i12][dim2];
+        c_wrap[n][dim1] = c_wrap3d[i12][dim1];
+        c_wrap[n][dim2] = c_wrap3d[i12][dim2];
       }
-      if (c_ids[n] < 0 || c_ids12[i12] < 0)
+      if (c_ids[n] < 0 || c_ids3d[i12] < 0)
         c_ids[n] = -1;
       else
-        c_ids[n] += c_ids12[i12]*nlayers[2];
+        c_ids[n] += c_ids3d[i12]*nlayers[2];
     }
     n_seg += n_new;
   }
 
-  delete [] c_ids12;
-  delete [] cfactor12;
-  if (domain->deform_vremap) memory->destroy(c_wrap12);
   return n_seg;
 }
 
