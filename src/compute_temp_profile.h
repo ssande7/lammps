@@ -33,6 +33,7 @@ class ComputeTempProfile : public Compute {
   virtual double compute_scalar();
   virtual void compute_vector();
   virtual void compute_array();
+  virtual void reset_extra_dof();
 
   virtual void remove_bias(int, double *);
   virtual void remove_bias_thr(int, double *, double *);
@@ -47,6 +48,7 @@ class ComputeTempProfile : public Compute {
   int nbinx,nbiny,nbinz,nbins;
   int ivx,ivy,ivz;
   double tfactor;
+  double nstreaming;
 
   int box_change,triclinic;
   int *periodicity;
