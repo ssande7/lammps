@@ -1,0 +1,23 @@
+This package implements the Nosé-Hoover mesh thermostat in LAMMPS.
+See [TODO: REF DETAILS] for details.
+The package provides the following features:
+
+* applying a linear combination of Nosé-Hoover thermostats to a given particle
+* applying thermostats to particles and/or other thermostats simultaneously
+* partitioning of particles based on their location relative to some point
+* balancing of partition matrix to conserve dof per thermostat
+
+[TODO:] See the file doc/nhmesh_tutorial.html for getting started.
+
+[TODO MAYBE:] There are auxiliary tools for using this package in tools/nhmesh.
+
+[TODO:] There are example scripts for using this package in examples/USER/nhmesh.
+
+The person who created this package is Stephen Sanderson at the
+Australian Institute for Bioengineering and Nanotechnology, The University of
+Queensland, Australia (stephen.sanderson at uq.edu.au). Contact him directly if
+you have questions.
+
+Co-authors: [TODO]
+Contributors: [TODO]
+
