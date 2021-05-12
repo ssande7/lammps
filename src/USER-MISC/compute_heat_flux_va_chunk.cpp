@@ -47,7 +47,7 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
   c_ids(nullptr), c_ids2d(nullptr), c_ids3d(nullptr),
   c_wrap(nullptr), c_wrap2d(nullptr), c_wrap3d(nullptr)
 {
-  if (narg < 6) error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
+  if (narg < 5) error->all(FLERR,"Illegal compute heat/flux/va/chunk command");
 
 
   MPI_Comm_rank(world,&me);
