@@ -407,6 +407,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
   double *rmass = atom->rmass;
   double *mass = atom->mass;
   double ei;
+  double ke2e = 0.5*force->mvv2e;
   for (i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       int c = ichunk[i]-1;
@@ -416,7 +417,7 @@ void ComputeHeatFluxVAChunk::compute_flux()
         // Need peculiar kinetic energy
         if (rmass) massone = rmass[i];
         else massone = mass[type[i]];
-        ei = massone*(v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2])
+        ei = ke2e*massone*(v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2])
              + c_pe->vector_atom[i];
 
         cvalues_local[c][3] += ei * v[i][0];
