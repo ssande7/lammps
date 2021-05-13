@@ -110,9 +110,12 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
     error->all(FLERR,"Compute heat/flux/va/chunk requires chunk/atom compute");
 
   // Need chunks with volume
-  if (c_chunk->which == ArgInfo::TYPE || c_chunk->which == ArgInfo::MOLECULE ||
-      c_chunk->which == ArgInfo::COMPUTE || c_chunk->which == ArgInfo::FIX ||
-      c_chunk->which == ArgInfo::VARIABLE)
+  // Also not supporting spheres or cylinders for now
+  int which = c_chunk->which;
+  if (which == ArgInfo::TYPE || which == ArgInfo::MOLECULE ||
+      which == ArgInfo::COMPUTE || which == ArgInfo::FIX ||
+      which == ArgInfo::VARIABLE || which == ArgInfo::BINSPHERE ||
+      which == ArgInfo::BINCYLINDER)
     error->all(FLERR,
         "Unsupported chunk/atom compute for compute heat/flux/va/chunk");
 
@@ -153,6 +156,8 @@ ComputeHeatFluxVAChunk::ComputeHeatFluxVAChunk(
   array = nullptr;
   maxchunk = 0;
   nchunk = 1;
+  maxlinechunk = 0;
+  linechunk = 1;
 
 }
 
@@ -191,12 +196,13 @@ void ComputeHeatFluxVAChunk::allocate()
         size_array_cols,"heat/flux/va/chunk:cvalues_local");
     cvalues = array;
 
-    // cfactor stores fraction of rij in each segment. Allocate nchunk+2 in case
-    // rij crosses the full region of chunks, with xi and xj outside the region
-    memory->grow(cfactor, nchunk+2, "heat/flux/va/chunk:cfactor");
-    memory->grow(c_ids, nchunk+2, "heat/flux/va/chunk:c_ids");
+  }
+  if (linechunk > maxlinechunk) {
+    maxlinechunk = linechunk;
+    memory->grow(cfactor, linechunk, "heat/flux/va/chunk:cfactor");
+    memory->grow(c_ids, linechunk, "heat/flux/va/chunk:c_ids");
     if (deform_vremap)
-      memory->grow(c_wrap, nchunk+2, 3, "heat/flux/va/chunk:c_wrap");
+      memory->grow(c_wrap, linechunk, 3, "heat/flux/va/chunk:c_wrap");
 
     if (c_chunk->which == ArgInfo::BIN2D || c_chunk->which == ArgInfo::BIN3D) {
       int n = c_chunk->nlayers[0];
@@ -206,7 +212,7 @@ void ComputeHeatFluxVAChunk::allocate()
         memory->grow( c_wrap2d,n+2,3,"heat/flux/va/chunk:c_wrap2d");
     }
     if (c_chunk->which == ArgInfo::BIN3D) {
-      int n = c_chunk->nlayers[0]*c_chunk->nlayers[1];
+      int n = c_chunk->nlayers[0]+c_chunk->nlayers[1];
       memory->grow(cfactor3d,n+2,"heat/flux/va/chunk:cfactor3d");
       memory->grow(c_ids3d,n+2,"heat/flux/va/chunk:c_ids3d");
       if (deform_vremap)
@@ -270,6 +276,12 @@ void ComputeHeatFluxVAChunk::setup()
   if (biasflag && c_temp_c->cchunk != c_chunk)
     error->all(FLERR,"Chunk/atom compute used by bias must match chunk "
                      "compute of compute heat/flux/va/chunk");
+
+  // Allocate sum(nlayers)+2 in case line crosses through entire chunked section
+  // on an angle, with start and end in unchunked zones.
+  // NOTE: this will need extra logic if sphere and cylinder binning is
+  // supported
+  linechunk = 2 + c_chunk->nlayers[0]+c_chunk->nlayers[1]+c_chunk->nlayers[2];
   nchunk = c_chunk->setup_chunks();
   allocate();
   cvalues = array;
@@ -332,10 +344,11 @@ void ComputeHeatFluxVAChunk::compute_array()
   int m,n;
   for (m=0; m<nchunk; m++) {
     for (n=0; n<6; n++) {
-      if (  c_chunk->which == ArgInfo::BINSPHERE
-         || c_chunk->which == ArgInfo::BINCYLINDER)
-        cvalues[m][n] /= c_chunk->chunk_volume_vec[m];
-      else cvalues[m][n] /= c_chunk->chunk_volume_scalar;
+      // if (  c_chunk->which == ArgInfo::BINSPHERE
+      //    || c_chunk->which == ArgInfo::BINCYLINDER)
+      //   cvalues[m][n] /= c_chunk->chunk_volume_vec[m];
+      // else
+      cvalues[m][n] /= c_chunk->chunk_volume_scalar;
     }
   }
 
@@ -520,11 +533,11 @@ int ComputeHeatFluxVAChunk::find_crossing(double *xi_in, double *xj_in)
 
   double rij[3] = {xj[0]-xi[0], xj[1]-xi[1], xj[2]-xi[2]};
 
-  if (c_chunk->which == ArgInfo::BINSPHERE)
-    return crossing_binsphere(xi, rij, c_ids, cfactor);
+  // if (c_chunk->which == ArgInfo::BINSPHERE)
+  //   return crossing_binsphere(xi, rij, c_ids, cfactor);
 
-  if (c_chunk->which == ArgInfo::BINCYLINDER)
-    return crossing_bincylinder(xi, rij, c_ids, cfactor);
+  // if (c_chunk->which == ArgInfo::BINCYLINDER)
+  //   return crossing_bincylinder(xi, rij, c_ids, cfactor);
 
   if (c_chunk->which == ArgInfo::BIN1D)
     return crossing_bin1d<0>(xi, rij, c_ids, cfactor, c_wrap);
@@ -788,20 +801,20 @@ int ComputeHeatFluxVAChunk::crossing_bin3d(
 
 /*------------------------------------------------------------------------*/
 
-int ComputeHeatFluxVAChunk::crossing_binsphere(
-    double *xi, double *rij, int *c_ids, double *cfactor)
-{
-  error->all(FLERR, "Spherical binning is currently unimplemented in "
-      "compute heat/flux/va/chunk");
-  return 0;
-}
+// int ComputeHeatFluxVAChunk::crossing_binsphere(
+//     double *xi, double *rij, int *c_ids, double *cfactor)
+// {
+//   error->all(FLERR, "Spherical binning is currently unimplemented in "
+//       "compute heat/flux/va/chunk");
+//   return 0;
+// }
 
 /*------------------------------------------------------------------------*/
 
-int ComputeHeatFluxVAChunk::crossing_bincylinder(
-    double *xi, double *rij, int *c_ids, double *cfactor)
-{
-  error->all(FLERR, "Cylinder binning is currently unimplemented in "
-      "compute heat/flux/va/chunk");
-  return 0;
-}
+// int ComputeHeatFluxVAChunk::crossing_bincylinder(
+//     double *xi, double *rij, int *c_ids, double *cfactor)
+// {
+//   error->all(FLERR, "Cylinder binning is currently unimplemented in "
+//       "compute heat/flux/va/chunk");
+//   return 0;
+// }

@@ -45,8 +45,8 @@ private:
   int crossing_bin1d(double *, double *, int *, double *, int **);
   int crossing_bin2d(double *, double *, int *, double *, int **);
   int crossing_bin3d(double *, double *, int *, double *, int **);
-  int crossing_binsphere(double *, double *, int *, double *);
-  int crossing_bincylinder(double *, double *, int *, double *);
+  // int crossing_binsphere(double *, double *, int *, double *);
+  // int crossing_bincylinder(double *, double *, int *, double *);
   int x2chunk(double *);
   void allocate();
 
@@ -61,7 +61,7 @@ private:
   char *id_pe;
   class Compute *c_pe;
 
-  int nchunk,maxchunk;
+  int nchunk,maxchunk,linechunk,maxlinechunk;
   char *id_chunk;
   class ComputeChunkAtom *c_chunk;
 
