@@ -61,6 +61,7 @@ irregular(nullptr), set(nullptr)
 
   set = new Set[6];
   memset(set,0,6*sizeof(Set));
+  xz_flip_offset = 0.0;
 
   // parse arguments
 
@@ -556,26 +557,26 @@ void FixDeform::init()
   // WIGGLE lo/hi flip test is on min/max oscillation limit, not tilt_stop
   // only trigger actual errors if flipflag is set
 
-  if (set[3].style && set[5].style) {
-    int flag = 0;
-    double lo,hi;
-    if (flipflag && set[3].style == VARIABLE)
-      error->all(FLERR,"Fix deform cannot use yz variable with xy");
-    if (set[3].style == WIGGLE) {
-      lo = set[3].tilt_min;
-      hi = set[3].tilt_max;
-    } else lo = hi = set[3].tilt_stop;
-    if (flipflag) {
-      if (lo/(set[1].hi_start-set[1].lo_start) < -0.5 ||
-          hi/(set[1].hi_start-set[1].lo_start) > 0.5) flag = 1;
-      if (set[1].style) {
-        if (lo/(set[1].hi_stop-set[1].lo_stop) < -0.5 ||
-            hi/(set[1].hi_stop-set[1].lo_stop) > 0.5) flag = 1;
-      }
-      if (flag)
-        error->all(FLERR,"Fix deform is changing yz too much with xy");
-    }
-  }
+  // if (set[3].style && set[5].style) {
+  //   int flag = 0;
+  //   double lo,hi;
+  //   if (flipflag && set[3].style == VARIABLE)
+  //     error->all(FLERR,"Fix deform cannot use yz variable with xy");
+  //   if (set[3].style == WIGGLE) {
+  //     lo = set[3].tilt_min;
+  //     hi = set[3].tilt_max;
+  //   } else lo = hi = set[3].tilt_stop;
+  //   if (flipflag) {
+  //     if (lo/(set[1].hi_start-set[1].lo_start) < -0.5 ||
+  //         hi/(set[1].hi_start-set[1].lo_start) > 0.5) flag = 1;
+  //     if (set[1].style) {
+  //       if (lo/(set[1].hi_stop-set[1].lo_stop) < -0.5 ||
+  //           hi/(set[1].hi_stop-set[1].lo_stop) > 0.5) flag = 1;
+  //     }
+  //     if (flag)
+  //       error->all(FLERR,"Fix deform is changing yz too much with xy");
+  //   }
+  // }
 
   // set domain->h_rate values for use by domain and other fixes/computes
   // initialize all rates to 0.0
@@ -807,8 +808,12 @@ void FixDeform::update_box()
 
       int idenom = 0;
       if (i == 5) idenom = 0;
-      else if (i == 4) idenom = 0;
-      else if (i == 3) idenom = 1;
+      else if (i == 4) {
+        idenom = 0;
+        // Account for offset due to yz flips
+        if (set[i].style)
+          set[i].tilt_target += xz_flip_offset;
+      } else if (i == 3) idenom = 1;
       double denom = set[idenom].hi_target - set[idenom].lo_target;
 
       double current = h[i]/h[idenom];
@@ -855,10 +860,12 @@ void FixDeform::update_box()
         if (set[3].tilt_flip*yprdinv < -0.5) {
           set[3].tilt_flip += yprd;
           set[4].tilt_flip += set[5].tilt_flip;
+          xz_flip_offset += set[5].tilt_flip;
           flipyz = 1;
         } else if (set[3].tilt_flip*yprdinv > 0.5) {
           set[3].tilt_flip -= yprd;
           set[4].tilt_flip -= set[5].tilt_flip;
+          xz_flip_offset -= set[5].tilt_flip;
           flipyz = -1;
         }
       }

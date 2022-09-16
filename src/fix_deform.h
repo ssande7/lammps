@@ -70,6 +70,7 @@ class FixDeform : public Fix {
     int hvar, hratevar;
   };
   Set *set;
+  double xz_flip_offset;
 
   void options(int, char **);
 };
