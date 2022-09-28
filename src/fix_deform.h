@@ -73,6 +73,8 @@ class FixDeform : public Fix {
   double xz_flip_offset;
 
   void options(int, char **);
+
+  friend class FixNVTSllod; // For correctness checking of set[i].style
 };
 
 }    // namespace LAMMPS_NS

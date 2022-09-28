@@ -32,7 +32,11 @@
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
+// from FixNH:
 enum{NOBIAS,BIAS};
+
+// from FixDeform:
+enum{NONE=0,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
 /* ---------------------------------------------------------------------- */
 
 FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
@@ -88,12 +92,29 @@ void FixNVTSllod::init()
   int i;
   for (i = 0; i < modify->nfix; i++)
     if (strncmp(modify->fix[i]->style,"deform",6) == 0) {
-      if (!peculiar && (dynamic_cast<FixDeform *>( modify->fix[i]))->remapflag != Domain::V_REMAP)
+      auto def = dynamic_cast<FixDeform *>(modify->fix[i]);
+      if (!peculiar && def->remapflag != Domain::V_REMAP)
         error->all(FLERR,"Using fix nvt/sllod with inconsistent fix deform "
                    "remap option");
-      if (peculiar && (dynamic_cast<FixDeform *>( modify->fix[i]))->remapflag != Domain::NO_REMAP)
+      if (peculiar && def->remapflag != Domain::NO_REMAP)
         error->all(FLERR,"Using fix nvt/sllod with inconsistent fix deform "
                    "remap option");
+      bool elongation = false;
+      for (int j = 0; j < 3; ++j) {
+        if (def->set[i].style) {
+          elongation = true;
+          if (def->set[j].style != TRATE)
+            error->all(FLERR,"fix nvt/sllod requires the trate style for x/y/z deformation");
+        }
+      }
+      for (int j = 3; j < 6; ++j) {
+        if (def->set[j].style && def->set[j].style != ERATE) {
+          if (elongation)
+            error->all(FLERR,"fix nvt/sllod requires the erate style for xy/xz/yz deformation under mixed shear/extensional flow");
+          else
+            error->warning(FLERR, "Using non-constant shear rate with fix nvt/sllod");
+        }
+      }
       break;
     }
   if (i == modify->nfix)
@@ -128,8 +149,15 @@ void FixNVTSllod::nh_v_temp()
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
-  double h_two[6],vdelu[3];
-  MathExtra::multiply_shape_shape(domain->h_rate,domain->h_inv,h_two);
+  double grad_u[6],vdelu[3];
+  double* h_rate = domain->h_rate;
+  double* h = domain->h;
+  grad_u[0] = h_rate[0]/h[0];
+  grad_u[1] = h_rate[1]/h[1];
+  grad_u[2] = h_rate[2]/h[2];
+  grad_u[3] = (h_rate[3] - grad_u[1]*h[3])/h[2];
+  grad_u[4] = (h_rate[4] - grad_u[0]*h[4])/h[2];
+  grad_u[5] = (h_rate[5] - grad_u[0]*h[5])/h[1];
 
   if (peculiar) {
     for (int i = 0; i < nlocal; i++) {
@@ -145,9 +173,9 @@ void FixNVTSllod::nh_v_temp()
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         if (!p_sllod) temperature->remove_bias(i,v[i]);
-        vdelu[0] = h_two[0]*v[i][0] + h_two[5]*v[i][1] + h_two[4]*v[i][2];
-        vdelu[1] = h_two[1]*v[i][1] + h_two[3]*v[i][2];
-        vdelu[2] = h_two[2]*v[i][2];
+        vdelu[0] = grad_u[0]*v[i][0] + grad_u[5]*v[i][1] + grad_u[4]*v[i][2];
+        vdelu[1] = grad_u[1]*v[i][1] + grad_u[3]*v[i][2];
+        vdelu[2] = grad_u[2]*v[i][2];
         if (p_sllod) temperature->remove_bias(i,v[i]);
         v[i][0] = v[i][0]*factor_eta - dthalf*vdelu[0];
         v[i][1] = v[i][1]*factor_eta - dthalf*vdelu[1];
@@ -171,15 +199,21 @@ void FixNVTSllod::nve_v()
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
-  double h_two[6];
-  MathExtra::multiply_shape_shape(domain->h_rate,domain->h_inv,h_two);
+  double grad_u[6], vfac[3];
+  double* h_rate = domain->h_rate;
+  double* h = domain->h;
+  grad_u[0] = h_rate[0]/h[0];
+  grad_u[1] = h_rate[1]/h[1];
+  grad_u[2] = h_rate[2]/h[2];
+  grad_u[3] = (h_rate[3] - grad_u[1]*h[3])/h[2];
+  grad_u[4] = (h_rate[4] - grad_u[0]*h[4])/h[2];
+  grad_u[5] = (h_rate[5] - grad_u[0]*h[5])/h[1];
 
-  double fac_vu[3];
   if (peculiar) {
     dtf2 = 0.5*dtf;
-    fac_vu[0] = exp(-h_two[0]*dtf2);
-    fac_vu[1] = exp(-h_two[1]*dtf2);
-    fac_vu[2] = exp(-h_two[2]*dtf2);
+    vfac[0] = exp(-grad_u[0]*dtf2);
+    vfac[1] = exp(-grad_u[1]*dtf2);
+    vfac[2] = exp(-grad_u[2]*dtf2);
   }
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
@@ -187,40 +221,58 @@ void FixNVTSllod::nve_v()
       else dtfm = dtf / mass[type[i]];
 
       if (peculiar) {
-        // 1st half step with SLLOD force
         if (which == BIAS) temperature->remove_bias(i,v[i]);
-        v[i][0] *= fac_vu[0];
-        v[i][1] *= fac_vu[1];
-        v[i][2] *= fac_vu[2];
         if (p_sllod) {
-          v[i][2] -= dtf2*h_two[2]*h_two[2]*x[i][2];
-          v[i][1] -= dtf2*(h_two[3]*v[i][2] + h_two[1]*h_two[1]*x[i][1]);
-          v[i][0] -= dtf2*(h_two[5]*v[i][1] + h_two[4]*v[i][2] + h_two[0]*h_two[0]*x[i][0]);
+          // Add dtf2*p-SLLOD force separately so that pure shear is identical
+          // between SLLOD and p-SLLOD. Using dtf2*(SLLOD_force + p-SLLOD_force)
+          // causes numerical divergence.
+          v[i][0] *= vfac[0];
+          v[i][1] *= vfac[1];
+          v[i][2] *= vfac[2];
+          v[i][2] -= dtf2*grad_u[2]*grad_u[2]*x[i][2];
+          v[i][1] -= dtf2*grad_u[3]*v[i][2] + dtf2*grad_u[1]*grad_u[1]*x[i][1];
+          v[i][0] -= dtf2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                     + dtf2*grad_u[0]*grad_u[0]*x[i][0];
+          v[i][0] += dtfm*f[i][0];
+          v[i][1] += dtfm*f[i][1];
+          v[i][2] += dtfm*f[i][2];
+          v[i][0] -= dtf2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                     + dtf2*grad_u[0]*grad_u[0]*x[i][0];
+          v[i][1] -= dtf2*grad_u[3]*v[i][2] + dtf2*grad_u[1]*grad_u[1]*x[i][1];
+          v[i][2] -= dtf2*grad_u[2]*grad_u[2]*x[i][2];
+          v[i][0] *= vfac[0];
+          v[i][1] *= vfac[1];
+          v[i][2] *= vfac[2];
         } else {
-          v[i][1] -= dtf2*h_two[3]*v[i][2];
-          v[i][0] -= dtf2*(h_two[5]*v[i][1] + h_two[4]*v[i][2]);
-        }
-      }
+          v[i][0] *= vfac[0];
+          v[i][1] *= vfac[1];
+          v[i][2] *= vfac[2];
+          v[i][1] -= dtf2*grad_u[3]*v[i][2];
+          v[i][0] -= dtf2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+          v[i][0] += dtfm*f[i][0];
+          v[i][1] += dtfm*f[i][1];
+          v[i][2] += dtfm*f[i][2];
+          v[i][0] -= dtf2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+          v[i][1] -= dtf2*grad_u[3]*v[i][2];
+          v[i][0] *= vfac[0];
+          v[i][1] *= vfac[1];
+          v[i][2] *= vfac[2];
 
-      // Half step velocity
-      v[i][0] += dtfm*f[i][0];
-      v[i][1] += dtfm*f[i][1];
-      v[i][2] += dtfm*f[i][2];
-
-      // 2nd half step SLLOD force
-      if (peculiar) {
-        if (p_sllod) {
-          v[i][0] -= dtf2*(h_two[5]*v[i][1] + h_two[4]*v[i][2] + h_two[0]*h_two[0]*x[i][0]);
-          v[i][1] -= dtf2*(h_two[3]*v[i][2] + h_two[1]*h_two[1]*x[i][1]);
-          v[i][2] -= dtf2*h_two[2]*h_two[2]*x[i][2];
-        } else {
-          v[i][0] -= dtf2*(h_two[5]*v[i][1] + h_two[4]*v[i][2]);
-          v[i][1] -= dtf2*h_two[3]*v[i][2];
+          // Exact ODE solution for mixed flow, if e_aa != e_bb, e_aa != 0 and e_bb != 0.
+          // v[i][0] = v[i][2]*grad_u[5]*grad_u[3]/(grad_u[2]-grad_u[1])
+          //         * ((vfac[2]-vfac[0])/(grad_u[2]-grad_u[0]) - (vfac[1]-vfac[0])/(grad_u[1]-grad_u[0]))
+          //         + v[i][1]*(vfac[1]-vfac[0])*grad_u[5]/(grad_u[1]-grad_u[0])
+          //         + v[i][2]*(vfac[2]-vfac[0])*grad_u[4]/(grad_u[2]-grad_u[0])
+          //         + (v[i][0]+f[i][0]*dtfm)*vfac[0];
+          // v[i][1] = v[i][2]*(vfac[2]-vfac[1])*grad_u[3]/(grad_u[2]-grad_u[1])
+          //         + (v[i][1]+f[i][1]*dtfm)*vfac[1];
+          // v[i][2] = (v[i][2]+f[i][2]*dtfm)*vfac[2];
         }
-        v[i][0] *= fac_vu[0];
-        v[i][1] *= fac_vu[1];
-        v[i][2] *= fac_vu[2];
         if (which == BIAS) temperature->restore_bias(i,v[i]);
+      } else {
+        v[i][0] += dtfm*f[i][0];
+        v[i][1] += dtfm*f[i][1];
+        v[i][2] += dtfm*f[i][2];
       }
     }
   }
@@ -236,7 +288,7 @@ void FixNVTSllod::nve_x()
   double **x = atom->x;
   double **v = atom->v;
   int *mask = atom->mask;
-  double vstream[3], h_two[6], xfac[3];
+  double grad_u[6], xfac[3];
   double dtv2 = dtv*0.5;
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
@@ -244,10 +296,17 @@ void FixNVTSllod::nve_x()
   // x update by full step only for atoms in group
   
   if (peculiar) {
-    MathExtra::multiply_shape_shape(domain->h_rate,domain->h_inv,h_two);
-    xfac[0] = exp(h_two[0]*dtv2);
-    xfac[1] = exp(h_two[1]*dtv2);
-    xfac[2] = exp(h_two[2]*dtv2);
+    double* h_rate = domain->h_rate;
+    double* h = domain->h;
+    grad_u[0] = h_rate[0]/h[0];
+    grad_u[1] = h_rate[1]/h[1];
+    grad_u[2] = h_rate[2]/h[2];
+    grad_u[3] = (h_rate[3] - grad_u[1]*h[3])/h[2];
+    grad_u[4] = (h_rate[4] - grad_u[0]*h[4])/h[2];
+    grad_u[5] = (h_rate[5] - grad_u[0]*h[5])/h[1];
+    xfac[0] = exp(grad_u[0]*dtv2);
+    xfac[1] = exp(grad_u[1]*dtv2);
+    xfac[2] = exp(grad_u[2]*dtv2);
   }
 
   for (int i = 0; i < nlocal; i++) {
@@ -256,16 +315,27 @@ void FixNVTSllod::nve_x()
         x[i][0] *= xfac[0];
         x[i][1] *= xfac[1];
         x[i][2] *= xfac[2];
-        x[i][1] += dtv2 * h_two[3]*x[i][2];
-        x[i][0] += dtv2 * (h_two[5]*x[i][1] + h_two[4]*x[i][2]);
+        x[i][1] += dtv2 * grad_u[3]*x[i][2];
+        x[i][0] += dtv2 * (grad_u[5]*x[i][1] + grad_u[4]*x[i][2]);
         x[i][0] += dtv * v[i][0];
         x[i][1] += dtv * v[i][1];
         x[i][2] += dtv * v[i][2];
-        x[i][0] += dtv2 * (h_two[5]*x[i][1] + h_two[4]*x[i][2]);
-        x[i][1] += dtv2 * h_two[3]*x[i][2];
+        x[i][0] += dtv2 * (grad_u[5]*x[i][1] + grad_u[4]*x[i][2]);
+        x[i][1] += dtv2 * grad_u[3]*x[i][2];
         x[i][0] *= xfac[0];
         x[i][1] *= xfac[1];
         x[i][2] *= xfac[2];
+
+        // Exact ODE solution for mixed flow, if e_aa != e_bb, e_aa != 0 and e_bb != 0.
+        // x[i][0] = x[i][2]*grad_u[5]*grad_u[3]/(grad_u[2]-grad_u[1])
+        //         * ((xfac[2]-xfac[0])/(grad_u[2]-grad_u[0]) - (xfac[1]-xfac[0])/(grad_u[1]-grad_u[0]))
+        //         + x[i][1]*(xfac[1]-xfac[0])*grad_u[5]/(grad_u[1]-grad_u[0])
+        //         + x[i][2]*(xfac[2]-xfac[0])*grad_u[4]/(grad_u[2]-grad_u[0])
+        //         + (x[i][0]+v[i][0]*dtv)*xfac[0];
+        // x[i][1] = x[i][2]*(xfac[2]-xfac[1])*grad_u[3]/(grad_u[2]-grad_u[1])
+        //         + (x[i][1]+v[i][1]*dtv)*xfac[1];
+        // x[i][2] = (x[i][2]+v[i][2]*dtv)*xfac[2];
+
       } else {
         x[i][0] += dtv * v[i][0];
         x[i][1] += dtv * v[i][1];
