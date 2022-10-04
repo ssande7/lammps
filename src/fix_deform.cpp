@@ -61,7 +61,6 @@ irregular(nullptr), set(nullptr)
 
   set = new Set[6];
   memset(set,0,6*sizeof(Set));
-  xz_flip_offset = 0.0;
 
   // parse arguments
 
@@ -517,7 +516,7 @@ void FixDeform::init()
         if (brate == 0.0)
           set[i].tilt_stop = set[i].rate*h_bb/arate * (exp(arate*delt)-1.0);
         else if (arate == brate) // TODO: use nearly_equal?
-          set[i].tilt_stop = set[i].rate*h_bb * exp(arate*delt);
+          set[i].tilt_stop = set[i].rate*h_bb*delt * exp(arate*delt);
         else
           set[i].tilt_stop = set[i].rate*h_bb/(brate-arate) * (exp(brate*delt)-exp(arate*delt));
       }
@@ -622,6 +621,43 @@ void FixDeform::init()
         h_rate[i] = set[i].rate*h_bb + set[i].tilt_start*arate;
     } else if (set[i].style == TRATE) {
       h_rate[i] = set[i].rate*set[i].tilt_start;
+    }
+  }
+
+  // Account for xy shear with yz tilt
+
+  if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE) {
+    h_rate[4] += set[5].rate*set[3].tilt_start;
+    set[4].tilt_stop += calc_xz_correction(delt);
+  }
+
+  // if yz changes and will cause box flip, then xy cannot be changing
+  // yz = [3], xy = [5]
+  // this is b/c the flips would induce continuous changes in xz
+  //   in order to keep the edge vectors of the flipped shape matrix
+  //   an integer combination of the edge vectors of the unflipped shape matrix
+  // VARIABLE for yz is error, since no way to calculate if box flip occurs
+  // WIGGLE lo/hi flip test is on min/max oscillation limit, not tilt_stop
+  // only trigger actual errors if flipflag is set
+
+  if (set[3].style && set[5].style) {
+    int flag = 0;
+    double lo,hi;
+    if (flipflag && set[3].style == VARIABLE)
+      error->all(FLERR,"Fix deform cannot use yz variable with xy");
+    if (set[3].style == WIGGLE) {
+      lo = set[3].tilt_min;
+      hi = set[3].tilt_max;
+    } else lo = hi = set[3].tilt_stop;
+    if (flipflag) {
+      if (lo/(set[1].hi_start-set[1].lo_start) < -0.5 ||
+          hi/(set[1].hi_start-set[1].lo_start) > 0.5) flag = 1;
+      if (set[1].style) {
+        if (lo/(set[1].hi_stop-set[1].lo_stop) < -0.5 ||
+            hi/(set[1].hi_stop-set[1].lo_stop) > 0.5) flag = 1;
+      }
+      if (flag)
+        error->all(FLERR,"Fix deform is changing yz too much with xy");
     }
   }
 
@@ -846,7 +882,7 @@ void FixDeform::update_box()
           if (brate == 0.0)
             set[i].tilt_target = set[i].rate*h_bb/arate * (exp(arate*delt)-1.0);
           else if (arate == brate) // TODO: use nearly_equal?
-            set[i].tilt_target = set[i].rate*h_bb * exp(arate*delt);
+            set[i].tilt_target = set[i].rate*h_bb*delt * exp(arate*delt);
           else
             set[i].tilt_target = set[i].rate*h_bb/(brate-arate) * (exp(brate*delt)-exp(arate*delt));
         }
@@ -855,28 +891,31 @@ void FixDeform::update_box()
         set[i].tilt_target = set[i].tilt_start +
           delta*(set[i].tilt_stop - set[i].tilt_start);
       }
+    }
 
-      // tilt_target can be large positive or large negative value
-      // add/subtract box lengths until tilt_target is closest to current value
+    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE) {
+      h_rate[4] += set[5].rate*set[3].tilt_target;
+      set[4].tilt_target += calc_xz_correction((update->ntimestep - update->beginstep) * update->dt);
+    }
 
+    // tilt_target can be large positive or large negative value
+    // add/subtract box lengths until tilt_target is closest to current value
+
+    for (int i = 3; i < 6; i++) {
       int idenom = 0;
-      if (i == 5) idenom = 0;
-      else if (i == 4) {
-        idenom = 0;
-        // Account for offset due to yz flips
-        if (set[i].style)
-          set[i].tilt_target += xz_flip_offset;
-      } else if (i == 3) idenom = 1;
+      if (i == 5 || i == 4) idenom = 0;
+      else idenom = 1; // i == 3
       double denom = set[idenom].hi_target - set[idenom].lo_target;
+      double denom_inv = 1.0 / denom;
 
       double current = h[i]/h[idenom];
 
-      while (set[i].tilt_target/denom - current > 0.0)
+      while (set[i].tilt_target*denom_inv - current > 0.0)
         set[i].tilt_target -= denom;
-      while (set[i].tilt_target/denom - current < 0.0)
+      while (set[i].tilt_target*denom_inv - current < 0.0)
         set[i].tilt_target += denom;
-      if (fabs(set[i].tilt_target/denom - 1.0 - current) <
-          fabs(set[i].tilt_target/denom - current))
+      if (fabs(set[i].tilt_target*denom_inv - 1.0 - current) <
+          fabs(set[i].tilt_target*denom_inv - current))
         set[i].tilt_target -= denom;
     }
   }
@@ -915,12 +954,10 @@ void FixDeform::update_box()
         if (set[3].tilt_flip*yprdinv < -0.5) {
           set[3].tilt_flip += yprd;
           set[4].tilt_flip += set[5].tilt_flip;
-          xz_flip_offset += set[5].tilt_flip;
           flipyz = 1;
         } else if (set[3].tilt_flip*yprdinv > 0.5) {
           set[3].tilt_flip -= yprd;
           set[4].tilt_flip -= set[5].tilt_flip;
-          xz_flip_offset -= set[5].tilt_flip;
           flipyz = -1;
         }
       }
@@ -1006,6 +1043,123 @@ void FixDeform::update_box()
   // redo KSpace coeffs since box has changed
 
   if (kspace_flag) force->kspace->setup();
+}
+
+/* ----------------------------------------------------------------------
+   Calculate correction to xz tilt due to xy shear with yz tilt required for
+   SLLOD to be correct.
+   NOTE: only considers xx, yy, zz deformation with TRATE
+         and xy, xz, yz with ERATE.
+   Non-zero xy rate and xz.style == ERATE is assumed.
+   Requires xz style of ERATE! If xz style is NONE then changes aren't
+   tracked properly (e.g. if there is pressure control on the xz tilt).
+------------------------------------------------------------------------- */
+double FixDeform::calc_xz_correction(double delt) {
+  // Solve ODE for xy component of xz tilt factor
+  double g_xy = set[5].rate, g_yz = set[3].rate;
+  double h_yz0 = set[3].tilt_start;
+  if (set[3].style == ERATE && g_yz != 0.0) {
+    double e_xx = 0.0, e_yy = 0.0, e_zz = 0.0;
+    if (set[0].style == TRATE) e_xx = set[0].rate;
+    if (set[1].style == TRATE) e_yy = set[1].rate;
+    if (set[2].style == TRATE) e_zz = set[2].rate;
+    double h_zz0 = set[2].hi_start - set[2].lo_start;
+    if (e_xx == e_zz) {
+      if (e_xx == 0.0) {
+        if (e_yy == 0.0) {
+          // Case 1,1: e_xx = e_yy = e_zz = 0 (Pure shear)
+          return g_xy*(h_yz0*delt+0.5*g_yz*h_zz0*delt*delt);
+        } else {
+          // Case 1,3: e_xx = e_zz = 0, e_yy != 0 (Shear + y extension - non vol. preserving)
+          double yyfac = (exp(e_yy*delt)-1.0)/e_yy;
+          return g_xy*g_yz*h_zz0/e_yy*(yyfac - delt) + g_xy*h_yz0*yyfac;
+        }
+      } else {
+        if(e_yy == 0.0) {
+          // Case 5,2: e_xx = e_zz != 0, e_yy = 0 (Shear + xz extension - non vol. preserving)
+          double xfac = exp(e_xx*delt);
+          return g_xy*g_yz*h_zz0/e_zz * (delt*xfac - (xfac-1.0)/e_xx)
+                 + g_xy*h_yz0*((xfac-1.0)/e_xx);
+        } else if (e_yy == e_zz) {
+          // Case 5,5: e_xx = e_yy = e_zz != 0 (Shear + xyz extension - non vol. preserving)
+          return g_xy*(h_yz0*delt + 0.5*g_xy*g_yz*h_zz0*delt*delt)*exp(e_xx*delt);
+        } else {
+          // Case 5,4: e_xx = e_zz != 0, e_yy != e_xx, e_yy != 0 (Shear + xyz extension - possibly vol. preserving)
+          double xfac = exp(e_xx*delt), yfac = exp(e_yy*delt);
+          double xyfac = (yfac-xfac)/(e_yy-e_xx);
+          return g_xy*g_yz*h_zz0/(e_zz-e_yy)*(delt*xfac-xyfac)
+                 + g_xy*h_yz0*xyfac;
+        }
+      }
+    } else if (e_xx == 0.0) {
+      if (e_yy == 0.0) {
+        // Case 2,2: e_xx = e_yy = 0, e_zz != 0
+        // (Shear + z extension - non vol. preserving)
+        return g_xy*g_yz*h_zz0/e_zz*((exp(e_zz*delt)-1.0)/e_zz - delt)
+               + g_xy*h_yz0*delt;
+      } else if (e_yy == e_zz) {
+        // Case 2,5: e_xx = 0, e_yy = e_zz != 0
+        // (Shear + yz extension - non vol. preserving)
+        double yfac = exp(e_yy*delt);
+        return g_xy*g_yz*h_zz0/e_yy*(delt*yfac - (yfac-1.0)/e_yy)
+               + g_xy*h_yz0*((yfac-1.0)/e_yy);
+      } else {
+        // Case 2,4: e_xx = 0, e_yy != 0, e_zz != 0, e_yy != e_zz
+        // (Shear + yz extension - possibly vol. preserving)
+        double yfac = (exp(e_yy*delt)-1.0)/e_yy;
+        return g_xy*g_yz*h_zz0/(e_zz-e_yy) * ((exp(e_zz)-1.0)/e_zz - yfac)
+               + g_xy*h_yz0*yfac;
+      }
+    } else if (e_zz == 0.0) {
+      if (e_yy == 0.0) {
+        // Case 3,1: e_xx != 0, e_yy = e_zz = 0
+        // (Shear + x extension - non vol. preserving)
+        double xfac = (exp(e_xx*delt)-1.0)/e_xx;
+        return g_xy*g_yz*h_zz0/e_xx*(xfac - delt) + g_xy*h_yz0*xfac;
+      } else if (e_xx == e_yy) {
+        // Case 3,3.1: e_xx = e_yy != 0, e_zz = 0
+        // (Shear + xy extension - non vol. preserving)
+        double xfac = exp(e_xx*delt);
+        return g_xy*g_yz/e_yy*((1.0-xfac)/e_xx + delt*xfac) + g_xy*h_yz0*(delt*xfac);
+      } else {
+        // Case 3,3.2: e_xx != 0, e_yy != 0, e_xx != e_yy, e_zz = 0
+        // (Shear + xy extension - possibly vol. preserving)
+        double xfac = exp(e_xx*delt), yfac = exp(e_yy*delt);
+        double xyfac = (yfac-xfac)/(e_yy-e_xx);
+        return g_xy*g_yz*h_zz0/e_yy * (xyfac + (1.0-xfac)/e_xx) + g_xy*h_yz0*xyfac;
+      }
+    } else {
+      // Case 4
+      if (e_yy == 0.0) {
+        // Case 4,2: e_xx != 0, e_zz != 0, e_xx != e_zz, e_yy = 0
+        // (Shear + xz extension, possibly vol. preserving)
+        double xfac = exp(e_xx*delt), zfac = exp(e_zz*delt);
+        return g_xy*g_yz*h_zz0/e_zz * ((zfac-xfac)/(e_zz-e_xx) + (1.0-xfac)/e_xx)
+               + g_xy*h_yz0*((1.0-xfac)/e_xx);
+      } else if (e_yy == e_zz) {
+        // Case 4,5: e_xx != 0, e_yy != 0, e_zz != 0, e_xx != e_zz, e_yy = e_zz
+        // (Shear + xyz extension, possibly vol. preserving)
+        double xfac = exp(e_xx*delt), yfac = exp(e_yy*delt);
+        double xyfac = (yfac-xfac)/(e_yy-e_xx);
+        return g_xy*g_yz*h_zz0/(e_yy-e_xx)*(delt*yfac - xyfac) + g_xy*h_yz0*xyfac;
+      } else if (e_yy == e_xx) {
+        // Case 4,4.1: e_xx != 0, e_yy != 0, e_zz != 0, e_xx != e_zz, e_yy = e_xx
+        // (Shear + xyz extension, possibly vol. preserving)
+        double xfac = exp(e_xx*delt), zfac = exp(e_zz*delt);
+        return g_xy*g_yz*h_zz0/(e_zz-e_yy)*((zfac-xfac)/(e_zz-e_xx) - delt*xfac)
+               + g_xy*h_yz0*(delt*xfac);
+      } else {
+        // Case 4,4.2: e_xx != 0, e_yy != 0, e_zz != 0, e_xx != e_zz, e_yy != e_xx, e_yy != e_zz
+        // (Shear + xyz extension, possibly vol. preserving)
+        double xfac=exp(e_xx*delt), yfac=exp(e_yy*delt), zfac=exp(e_zz*delt);
+        double xzfac = (zfac-xfac)/(e_zz-e_xx), xyfac = (yfac-xfac)/(e_yy-e_xx);
+        return g_xy*g_yz*h_zz0/(e_zz-e_yy)*(xzfac-xyfac) + g_xy*h_yz0*xyfac;
+      }
+    }
+  } else {
+    // h_yz is constant
+    return g_xy*h_yz0*delt;
+  }
 }
 
 /* ----------------------------------------------------------------------

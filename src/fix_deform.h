@@ -42,6 +42,7 @@ class FixDeform : public Fix {
 
  protected:
   void update_box();
+  double calc_xz_correction(double);
 
   int triclinic, scaleflag, flipflag;
   int flip, flipxy, flipxz, flipyz;
@@ -70,7 +71,6 @@ class FixDeform : public Fix {
     int hvar, hratevar;
   };
   Set *set;
-  double xz_flip_offset;
 
   void options(int, char **);
 
