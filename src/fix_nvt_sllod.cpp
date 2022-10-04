@@ -115,6 +115,12 @@ void FixNVTSllod::init()
             error->warning(FLERR, "Using non-constant shear rate with fix nvt/sllod");
         }
       }
+      if (def->set[5].style && def->set[5].rate != 0.0 &&
+          (def->set[3].style || domain->yz != 0.0) &&
+          (def->set[4].style != ERATE || def->set[5].style != ERATE
+           || (def->set[3].style && def->set[3].style != ERATE))
+          )
+        error->warning(FLERR,"Shearing xy with a yz tilt is only handled correctly if fix deform uses the erate style for xy, xz and yz");
       break;
     }
   if (i == modify->nfix)
