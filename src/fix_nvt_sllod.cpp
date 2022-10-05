@@ -321,17 +321,6 @@ void FixNVTSllod::nve_x()
         x[i][0] *= xfac[0];
         x[i][1] *= xfac[1];
         x[i][2] *= xfac[2];
-
-        // Exact ODE solution for mixed flow, if e_aa != e_bb, e_aa != 0 and e_bb != 0.
-        // x[i][0] = x[i][2]*grad_u[5]*grad_u[3]/(grad_u[2]-grad_u[1])
-        //         * ((xfac[2]-xfac[0])/(grad_u[2]-grad_u[0]) - (xfac[1]-xfac[0])/(grad_u[1]-grad_u[0]))
-        //         + x[i][1]*(xfac[1]-xfac[0])*grad_u[5]/(grad_u[1]-grad_u[0])
-        //         + x[i][2]*(xfac[2]-xfac[0])*grad_u[4]/(grad_u[2]-grad_u[0])
-        //         + (x[i][0]+v[i][0]*dtv)*xfac[0];
-        // x[i][1] = x[i][2]*(xfac[2]-xfac[1])*grad_u[3]/(grad_u[2]-grad_u[1])
-        //         + (x[i][1]+v[i][1]*dtv)*xfac[1];
-        // x[i][2] = (x[i][2]+v[i][2]*dtv)*xfac[2];
-
       } else {
         x[i][0] += dtv * v[i][0];
         x[i][1] += dtv * v[i][1];

@@ -639,8 +639,9 @@ void FixDeform::init()
   // VARIABLE for yz is error, since no way to calculate if box flip occurs
   // WIGGLE lo/hi flip test is on min/max oscillation limit, not tilt_stop
   // only trigger actual errors if flipflag is set
+  // this is accounted for if xy and xz use ERATE style
 
-  if (set[3].style && set[5].style) {
+  if (set[3].style && set[5].style && set[4].style != ERATE && set[3].style != ERATE) {
     int flag = 0;
     double lo,hi;
     if (flipflag && set[3].style == VARIABLE)
@@ -658,6 +659,15 @@ void FixDeform::init()
       }
       if (flag)
         error->all(FLERR,"Fix deform is changing yz too much with xy");
+    }
+  }
+
+  // Variables/computes may not be valid during post_integrate,
+  // so require end_flag
+  if (!end_flag) {
+    for (int i = 0; i < 6; ++i) {
+      if (set[i].style == VARIABLE)
+        error->all(FLERR,"Fix deform cannot use the variable style without setting the end_of_step flag");
     }
   }
 
@@ -821,10 +831,10 @@ void FixDeform::update_box()
 
   // for triclinic, set new box shape
   // for NONE, target is current tilt
-  // for TRATE, set target directly based on current time. also set h_rate
+  // for TRATE, set target directly based on current time. set h_rate after box flips
   // for WIGGLE, set target directly based on current time. also set h_rate
   // for VARIABLE, set target directly via variable eval. also set h_rate
-  // for ERATE, set target accounting for other deformation rates. also set h_rate
+  // for ERATE, set target accounting for other deformation rates. set h_rate after box flips
   // for other styles, target is linear value between start and stop values
 
   if (triclinic) {
@@ -838,7 +848,6 @@ void FixDeform::update_box()
       } else if (set[i].style == TRATE) {
         double delt = (update->ntimestep - update->beginstep) * update->dt;
         set[i].tilt_target = set[i].tilt_start * exp(set[i].rate*delt);
-        h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == WIGGLE) {
         double delt = (update->ntimestep - update->beginstep) * update->dt;
         set[i].tilt_target = set[i].tilt_start +
@@ -859,19 +868,16 @@ void FixDeform::update_box()
           if (set[1].style == TRATE) arate = set[1].rate;
           if (set[2].style == TRATE) brate = set[2].rate;
           h_bb = set[2].hi_start - set[2].lo_start;
-          h_rate[i] = set[i].rate*(set[2].hi_target-set[2].lo_target) + arate*set[i].tilt_target;
         }
         if (i == 4) {
           if (set[0].style == TRATE) arate = set[0].rate;
           if (set[2].style == TRATE) brate = set[2].rate;
           h_bb = set[2].hi_start - set[2].lo_start;
-          h_rate[i] = set[i].rate*(set[2].hi_target-set[2].lo_target) + arate*set[i].tilt_target;
         }
         if (i == 5) {
           if (set[0].style == TRATE) arate = set[0].rate;
           if (set[1].style == TRATE) brate = set[1].rate;
           h_bb = set[1].hi_start - set[1].lo_start;
-          h_rate[i] = set[i].rate*(set[1].hi_target-set[1].lo_target) + arate*set[i].tilt_target;
         }
         if (arate == 0.0) {
           if (brate == 0.0)
@@ -893,15 +899,15 @@ void FixDeform::update_box()
       }
     }
 
-    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE) {
-      h_rate[4] += set[5].rate*set[3].tilt_target;
+    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
       set[4].tilt_target += calc_xz_correction((update->ntimestep - update->beginstep) * update->dt);
-    }
 
     // tilt_target can be large positive or large negative value
-    // add/subtract box lengths until tilt_target is closest to current value
+    // add/subtract along box vectors until tilt_target is closest to current
+    // value. Need to know final xy tilt first since yz adjusts C vector by
+    // multiple of B vector. Adjust xz last to account for adjustments by yz.
 
-    for (int i = 3; i < 6; i++) {
+    for (int i : {5, 3, 4}) {
       int idenom = 0;
       if (i == 5 || i == 4) idenom = 0;
       else idenom = 1; // i == 3
@@ -910,13 +916,19 @@ void FixDeform::update_box()
 
       double current = h[i]/h[idenom];
 
-      while (set[i].tilt_target*denom_inv - current > 0.0)
+      while (set[i].tilt_target*denom_inv - current > 0.0) {
         set[i].tilt_target -= denom;
-      while (set[i].tilt_target*denom_inv - current < 0.0)
+        if (i == 3) set[4].tilt_target -= set[5].tilt_target;
+      }
+      while (set[i].tilt_target*denom_inv - current < 0.0) {
         set[i].tilt_target += denom;
+        if (i == 3) set[4].tilt_target += set[5].tilt_target;
+      }
       if (fabs(set[i].tilt_target*denom_inv - 1.0 - current) <
-          fabs(set[i].tilt_target*denom_inv - current))
+          fabs(set[i].tilt_target*denom_inv - current)) {
         set[i].tilt_target -= denom;
+        if (i == 3) set[4].tilt_target -= set[5].tilt_target;
+      }
     }
   }
 
@@ -984,6 +996,44 @@ void FixDeform::update_box()
       if (flipxy || flipxz || flipyz) flip = 1;
       if (flip) next_reneighbor = update->ntimestep + (end_flag ? 1 : 0);
     }
+  }
+
+  // For styles with h_rate dependent on xy/xz/yz, need to set h_rate after box
+  // flips so that the correct streaming velocity can be recovered by fix nvt/sllod
+  if (triclinic) {
+    double *h = domain->h;
+
+    for (i = 3; i < 6; i++) {
+      if (set[i].style == TRATE) {
+        h_rate[i] = set[i].rate * domain->h[i];
+      } if (set[i].style == ERATE) {
+        // Solve ODE for a,b,c vectors accounting for elongation caused by TRATE.
+        // This is needed for SLLOD to be correct under mixed flow.
+        // TODO: do other elongation styles need to be accounted for where possible?
+        double delt = (update->ntimestep - update->beginstep) * update->dt;
+        double arate = 0.0, brate = 0.0, h_bb;
+        if (i == 3) {
+          if (set[1].style == TRATE) arate = set[1].rate;
+          if (set[2].style == TRATE) brate = set[2].rate;
+          h_bb = set[2].hi_start - set[2].lo_start;
+          h_rate[i] = set[i].rate*(set[2].hi_target-set[2].lo_target) + arate*set[i].tilt_target;
+        }
+        if (i == 4) {
+          if (set[0].style == TRATE) arate = set[0].rate;
+          if (set[2].style == TRATE) brate = set[2].rate;
+          h_bb = set[2].hi_start - set[2].lo_start;
+          h_rate[i] = set[i].rate*(set[2].hi_target-set[2].lo_target) + arate*set[i].tilt_target;
+        }
+        if (i == 5) {
+          if (set[0].style == TRATE) arate = set[0].rate;
+          if (set[1].style == TRATE) brate = set[1].rate;
+          h_bb = set[1].hi_start - set[1].lo_start;
+          h_rate[i] = set[i].rate*(set[1].hi_target-set[1].lo_target) + arate*set[i].tilt_target;
+        }
+      }
+    }
+    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
+      h_rate[4] += set[5].rate*set[3].tilt_target;
   }
 
   // convert atoms and rigid bodies to lamda coords
