@@ -157,13 +157,8 @@ void FixNVTSllod::nh_v_temp()
 
   double grad_u[6],vdelu[3];
   double* h_rate = domain->h_rate;
-  double* h = domain->h;
-  grad_u[0] = h_rate[0]/h[0];
-  grad_u[1] = h_rate[1]/h[1];
-  grad_u[2] = h_rate[2]/h[2];
-  grad_u[3] = (h_rate[3] - grad_u[1]*h[3])/h[2];
-  grad_u[4] = (h_rate[4] - grad_u[0]*h[4])/h[2];
-  grad_u[5] = (h_rate[5] - grad_u[0]*h[5])/h[1];
+  double* h_inv = domain->h_inv;
+  MathExtra::multiply_shape_shape(h_rate, h_inv, grad_u);
 
   if (peculiar) {
     for (int i = 0; i < nlocal; i++) {
