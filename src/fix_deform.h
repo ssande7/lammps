@@ -35,9 +35,14 @@ class FixDeform : public Fix {
   void init() override;
   void pre_exchange() override;
   void end_of_step() override;
+  void post_integrate() override;
+  void post_integrate_respa(int,int) override;
   void write_restart(FILE *) override;
   void restart(char *buf) override;
   double memory_usage() override;
+
+  void update_box();
+  double calc_xz_correction(double);
 
  protected:
   int triclinic, scaleflag, flipflag;
@@ -45,8 +50,16 @@ class FixDeform : public Fix {
   double *h_rate, *h_ratelo;
   int varflag;                   // 1 if VARIABLE option is used, 0 if not
   int kspace_flag;               // 1 if KSpace invoked, 0 if not
+  int end_flag;                  // 1 = box update at end of step, 0 = post integrate
+  int need_flip_change;          // 1 if box needs to be flipped
+  int allow_flip_change;         // 1 if box flip is allowed (prevent flip mid respa step)
   std::vector<Fix *> rfix;       // pointers to rigid fixes
   class Irregular *irregular;    // for migrating atoms after box flips
+
+  int nlevels_respa, nloop0_respa, kspace_level_respa;
+  double *step_respa;
+  bigint nsteps, nsteps_total;
+  double dt;
 
   double TWOPI;
 
