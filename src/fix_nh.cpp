@@ -44,7 +44,6 @@ using namespace FixConst;
 #define TILTMAX 1.5
 #define EPSILON 1.0e-6
 
-enum{NOBIAS,BIAS};
 enum{NONE,XYZ,XY,YZ,XZ};
 enum{ISO,ANISO,TRICLINIC};
 
@@ -359,9 +358,11 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg],"ext") == 0) {
       iarg += 2;
 
-    // keyword psllod is parsed in fix/nvt/sllod
+    // keywords psllod and peculiar are parsed in fix/nvt/sllod
 
     } else if (strcmp(arg[iarg],"psllod") == 0) {
+      iarg += 2;
+    } else if (strcmp(arg[iarg], "peculiar") == 0) {
       iarg += 2;
 
     } else error->all(FLERR,"Unknown fix nvt/npt/nph keyword: {}", arg[iarg]);

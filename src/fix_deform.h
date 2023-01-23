@@ -63,6 +63,8 @@ class FixDeform : public Fix {
 
   double TWOPI;
 
+  enum{NONE=0,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
+
   struct Set {
     int style, substyle;
     double flo, fhi, ftilt;
@@ -81,6 +83,9 @@ class FixDeform : public Fix {
   Set *set;
 
   void options(int, char **);
+
+  // Allow fix nvt/sllod to check deform parameters for correctness
+  friend class FixNVTSllod;
 };
 
 }    // namespace LAMMPS_NS
