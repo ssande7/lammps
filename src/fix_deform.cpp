@@ -905,7 +905,7 @@ void FixDeform::update_box()
       } else if (set[i].style == TRATE) {
         double delt = nsteps * dt;
         set[i].tilt_target = set[i].tilt_start * exp(set[i].rate*delt);
-        h_rate[i] = set[i].rate * domain->h[i];
+        // h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == ERATE) {
         // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE.
         // This is needed for SLLOD to be correct under mixed flow.
@@ -955,38 +955,38 @@ void FixDeform::update_box()
         set[i].tilt_target = set[i].tilt_start +
           delta*(set[i].tilt_stop - set[i].tilt_start);
       }
+    }
 
-      // Correct for effects of deformation on xz tilt
-      if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
-        set[4].tilt_target += calc_xz_correction(nsteps * dt);
+    // Correct for effects of deformation on xz tilt
+    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
+      set[4].tilt_target += calc_xz_correction(nsteps * dt);
 
-      // tilt_target can be large positive or large negative value
-      // add/subtract box lengths until tilt_target is closest to current value
-      // need to know final xy tilt first since yz adjustc c vector by multiple of b vector
-      // adjust xz last to account for adjustments made by yz
+    // tilt_target can be large positive or large negative value
+    // add/subtract box lengths until tilt_target is closest to current value
+    // need to know final xy tilt first since yz adjustc c vector by multiple of b vector
+    // adjust xz last to account for adjustments made by yz
 
-      for (int i : {5, 3, 4}) {
-        int idenom = 0;
-        if (i == 5 || i == 4) idenom = 0;
-        else idenom = 1; // i == 3
-        double denom = set[idenom].hi_target - set[idenom].lo_target;
-        double denom_inv = 1.0 / denom;
+    for (int i : {5, 3, 4}) {
+      int idenom = 0;
+      if (i == 5 || i == 4) idenom = 0;
+      else idenom = 1; // i == 3
+      double denom = set[idenom].hi_target - set[idenom].lo_target;
+      double denom_inv = 1.0 / denom;
 
-        double current = h[i]/h[idenom];
+      double current = h[i]/h[idenom];
 
-        while (set[i].tilt_target*denom_inv - current > 0.0) {
-          set[i].tilt_target -= denom;
-          if (i == 3) set[4].tilt_target -= set[5].tilt_target;
-        }
-        while (set[i].tilt_target*denom_inv - current < 0.0) {
-          set[i].tilt_target += denom;
-          if (i == 3) set[4].tilt_target += set[5].tilt_target;
-        }
-        if (fabs(set[i].tilt_target*denom_inv - 1.0 - current) <
-            fabs(set[i].tilt_target*denom_inv - current)) {
-          set[i].tilt_target -= denom;
-          if (i == 3) set[4].tilt_target -= set[5].tilt_target;
-        }
+      while (set[i].tilt_target*denom_inv - current > 0.0) {
+        set[i].tilt_target -= denom;
+        if (i == 3) set[4].tilt_target -= set[5].tilt_target;
+      }
+      while (set[i].tilt_target*denom_inv - current < 0.0) {
+        set[i].tilt_target += denom;
+        if (i == 3) set[4].tilt_target += set[5].tilt_target;
+      }
+      if (fabs(set[i].tilt_target*denom_inv - 1.0 - current) <
+          fabs(set[i].tilt_target*denom_inv - current)) {
+        set[i].tilt_target -= denom;
+        if (i == 3) set[4].tilt_target -= set[5].tilt_target;
       }
     }
   }
@@ -1075,7 +1075,7 @@ void FixDeform::update_box()
     for (i = 3; i < 6; i++) {
       if (set[i].style == TRATE) {
         h_rate[i] = set[i].rate * domain->h[i];
-      } if (set[i].style == ERATE) {
+      } else if (set[i].style == ERATE) {
         // Solve ODE for a,b,c vectors accounting for elongation caused by TRATE.
         // This is needed for SLLOD to be correct under mixed flow.
         // TODO: do other elongation styles need to be accounted for where possible?
