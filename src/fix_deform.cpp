@@ -905,7 +905,6 @@ void FixDeform::update_box()
       } else if (set[i].style == TRATE) {
         double delt = nsteps * dt;
         set[i].tilt_target = set[i].tilt_start * exp(set[i].rate*delt);
-        // h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == ERATE) {
         // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE.
         // This is needed for SLLOD to be correct under mixed flow.
