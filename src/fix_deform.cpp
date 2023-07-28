@@ -962,13 +962,13 @@ void FixDeform::update_box()
 
     // tilt_target can be large positive or large negative value
     // add/subtract box lengths until tilt_target is closest to current value
-    // need to know final xy tilt first since yz adjustc c vector by multiple of b vector
+    // need to know final xy tilt first since yz adjusts c vector by multiple of b vector
     // adjust xz last to account for adjustments made by yz
 
     for (int i : {5, 3, 4}) {
       int idenom = 0;
-      if (i == 5 || i == 4) idenom = 0;
-      else idenom = 1; // i == 3
+      if (i == 3) idenom = 1; // yz
+      else idenom = 0;        // xz || xy
       double denom = set[idenom].hi_target - set[idenom].lo_target;
       double denom_inv = 1.0 / denom;
 
