@@ -302,21 +302,31 @@ void FixNVTSllod::nve_x()
   xfac[1] = exp(grad_u[1]*dtv2);
   xfac[2] = exp(grad_u[2]*dtv2);
 
+  // Fix deform keeps the box centre fixed under elongation,
+  // and the lower corner fixed under shear, so adjust for that
+  // to avoid an apparent drift relative to the box and prevent
+  // extra atom exchanges between MPI ranks
+  double xmid[3];
+  for (int i = 0; i < 3; ++i) {
+    xmid[i] = (domain->boxhi[i] + domain->boxlo[i])/2.;
+  }
+  double *xlo = domain->boxlo;
+
   for (int i = 0; i < nlocal; ++i) {
     if (mask[i] & groupbit) {
-      x[i][0] *= xfac[0];
-      x[i][1] *= xfac[1];
-      x[i][2] *= xfac[2];
-      x[i][1] += dtv2 * grad_u[3]*x[i][2];
-      x[i][0] += dtv2 * (grad_u[5]*x[i][1] + grad_u[4]*x[i][2]);
+      x[i][0] = xmid[0] + (x[i][0] - xmid[0])*xfac[0];
+      x[i][1] = xmid[1] + (x[i][1] - xmid[1])*xfac[1];
+      x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
+      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo[2]);
+      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo[1]) + grad_u[4]*(x[i][2] - xlo[2]));
       x[i][0] += dtv * v[i][0];
       x[i][1] += dtv * v[i][1];
       x[i][2] += dtv * v[i][2];
-      x[i][0] += dtv2 * (grad_u[5]*x[i][1] + grad_u[4]*x[i][2]);
-      x[i][1] += dtv2 * grad_u[3]*x[i][2];
-      x[i][0] *= xfac[0];
-      x[i][1] *= xfac[1];
-      x[i][2] *= xfac[2];
+      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo[1]) + grad_u[4]*(x[i][2] - xlo[2]));
+      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo[2]);
+      x[i][0] = xmid[0] + (x[i][0] - xmid[0])*xfac[0];
+      x[i][1] = xmid[1] + (x[i][1] - xmid[1])*xfac[1];
+      x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
     }
   }
 }
