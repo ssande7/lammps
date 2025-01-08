@@ -3,6 +3,7 @@ import sys,os,unittest,ctypes
 from lammps import lammps, LMP_VAR_ATOM, LMP_STYLE_GLOBAL, LMP_STYLE_LOCAL
 from lammps import LMP_TYPE_VECTOR, LMP_SIZE_VECTOR, LMP_SIZE_ROWS, LMP_SIZE_COLS
 from lammps import LAMMPS_DOUBLE_2D, LAMMPS_AUTODETECT
+import math
 
 has_manybody=False
 try:
@@ -11,6 +12,17 @@ try:
         machine=os.environ['LAMMPS_MACHINE_NAME']
     lmp=lammps(name=machine)
     has_manybody = lmp.has_style("pair","sw")
+    lmp.close()
+except:
+    pass
+
+has_streitz=False
+try:
+    machine=None
+    if 'LAMMPS_MACHINE_NAME' in os.environ:
+        machine=os.environ['LAMMPS_MACHINE_NAME']
+    lmp=lammps(name=machine)
+    has_streitz = lmp.has_style("pair","coul/streitz")
     lmp.close()
 except:
     pass
@@ -475,6 +487,26 @@ create_atoms 1 single &
         a = self.lmp.extract_variable("a")
         self.assertEqual(a, 3.14)
 
+    def test_extract_variable_stringstyle(self):
+        self.lmp.command("variable a string xxx")
+        a = self.lmp.extract_variable("a")
+        self.assertEqual(a, 'xxx')
+
+        rv = self.lmp.set_string_variable("a","20")
+        a = self.lmp.extract_variable("a")
+        self.assertEqual(a, '20')
+        self.assertEqual(rv, 0)
+
+    def test_extract_variable_internalstyle(self):
+        self.lmp.command("variable a internal 2.0")
+        a = self.lmp.extract_variable("a")
+        self.assertEqual(a, 2.0)
+
+        rv = self.lmp.set_internal_variable("a",-4.5)
+        a = self.lmp.extract_variable("a")
+        self.assertEqual(a, -4.5)
+        self.assertEqual(rv, 0)
+
     def test_extract_variable_atomstyle(self):
         self.lmp.command("units lj")
         self.lmp.command("atom_style atomic")
@@ -533,9 +565,68 @@ create_atoms 1 single &
             result = self.lmp.get_thermo(key)
             self.assertEqual(value, result, key)
 
+
+    def test_last_thermo(self):
+        self.lmp.command("units lj")
+        self.lmp.command("atom_style atomic")
+        self.lmp.command("atom_modify map array")
+        self.lmp.command("boundary f f f")
+        self.lmp.command("region box block 0 2 0 2 0 2")
+        self.lmp.command("create_box 1 box")
+        self.lmp.command("mass * 1")
+
+        x = [
+          0.5, 0.5, 0.5,
+          1.5, 1.5, 1.5
+        ]
+        types = [1, 1]
+        self.lmp.create_atoms(2, id=None, type=types, x=x)
+
+        self.assertEqual(self.lmp.last_thermo(), None)
+        self.lmp.command("run 2 post no")
+        ref = { "Step" : 2,
+                "Temp" : 0.0,
+                "E_pair" : 0.0,
+                "E_mol" : 0.0,
+                "TotEng" : 0.0,
+                "Press" : 0.0}
+        self.assertDictEqual(self.lmp.last_thermo(), ref)
+
+    def test_extract_setting(self):
+        self.assertEqual(self.lmp.extract_setting("dimension"), 3)
+        self.assertEqual(self.lmp.extract_setting("box_exist"), 0)
+        self.assertEqual(self.lmp.extract_setting("kokkos_active"), 0)
+        self.assertEqual(self.lmp.extract_setting("kokkos_nthreads"), 0)
+        self.assertEqual(self.lmp.extract_setting("kokkos_ngpus"), 0)
+        self.lmp.command("region box block -1 1 -2 2 -3 3")
+        self.lmp.command("create_box 1 box")
+        self.lmp.command("special_bonds lj 0.0 0.5 0.8 coul 0.1 0.5 1.0")
+        self.assertEqual(self.lmp.extract_setting("newton_bond"), 1)
+        self.assertEqual(self.lmp.extract_setting("newton_pair"), 1)
+        self.assertEqual(self.lmp.extract_setting("triclinic"), 0)
+        self.assertEqual(self.lmp.extract_setting("universe_rank"), 0)
+        self.assertEqual(self.lmp.extract_setting("universe_size"), 1)
+        self.assertEqual(self.lmp.extract_setting("world_rank"), 0)
+        self.assertEqual(self.lmp.extract_setting("world_size"), 1)
+        self.assertEqual(self.lmp.extract_setting("triclinic"), 0)
+        self.assertEqual(self.lmp.extract_setting("comm_style"), 0)
+        self.assertEqual(self.lmp.extract_setting("comm_layout"), 0)
+        self.assertEqual(self.lmp.extract_setting("comm_mode"), 0)
+        self.assertEqual(self.lmp.extract_setting("ghost_velocity"), 0)
+        self.lmp.command("comm_style tiled")
+        self.lmp.command("comm_modify vel yes")
+        self.lmp.command("mass 1 1.0")
+        self.lmp.command("run 0 post no")
+        self.lmp.command("balance 0.1 rcb")
+        self.assertEqual(self.lmp.extract_setting("comm_style"), 1)
+        self.assertEqual(self.lmp.extract_setting("comm_layout"), 2)
+        self.assertEqual(self.lmp.extract_setting("comm_mode"), 0)
+        self.assertEqual(self.lmp.extract_setting("ghost_velocity"), 1)
+
     def test_extract_global(self):
         self.lmp.command("region box block -1 1 -2 2 -3 3")
         self.lmp.command("create_box 1 box")
+        self.lmp.command("special_bonds lj 0.0 0.5 0.8 coul 0.1 0.5 1.0")
         self.assertEqual(self.lmp.extract_global("units"), "lj")
         self.assertEqual(self.lmp.extract_global("ntimestep"), 0)
         self.assertEqual(self.lmp.extract_global("dt"), 0.005)
@@ -552,10 +643,22 @@ create_atoms 1 single &
         self.assertEqual(self.lmp.extract_global("subhi"), [1.0, 2.0, 3.0])
         self.assertEqual(self.lmp.extract_global("periodicity"), [1,1,1])
         self.assertEqual(self.lmp.extract_global("triclinic"), 0)
+        self.assertEqual(self.lmp.extract_global("special_lj"), [1.0, 0.0, 0.5, 0.8])
+        self.assertEqual(self.lmp.extract_global("special_coul"), [1.0, 0.1, 0.5, 1.0])
         self.assertEqual(self.lmp.extract_global("sublo_lambda"), None)
         self.assertEqual(self.lmp.extract_global("subhi_lambda"), None)
         self.assertEqual(self.lmp.extract_global("respa_levels"), None)
         self.assertEqual(self.lmp.extract_global("respa_dt"), None)
+        self.lmp.command("special_bonds lj/coul 0.0 1.0 1.0")
+        self.assertEqual(self.lmp.extract_global("special_lj"), [1.0, 0.0, 1.0, 1.0])
+        self.assertEqual(self.lmp.extract_global("special_coul"), [1.0, 0.0, 1.0, 1.0])
+        self.assertEqual(self.lmp.extract_global("map_style"), 0)
+        self.assertEqual(self.lmp.extract_global("map_tag_max"), -1)
+        self.assertEqual(self.lmp.extract_global("sortfreq"), 1000)
+        self.assertEqual(self.lmp.extract_global("nextsort"), 0)
+        self.assertEqual(self.lmp.extract_global("xlattice"), 1.0)
+        self.assertEqual(self.lmp.extract_global("ylattice"), 1.0)
+        self.assertEqual(self.lmp.extract_global("zlattice"), 1.0)
 
         # set and initialize r-RESPA
         self.lmp.command("run_style respa 3 5 2 pair 2 kspace 3")
@@ -570,6 +673,56 @@ create_atoms 1 single &
         self.assertEqual(self.lmp.extract_global("triclinic"), 1)
         self.assertEqual(self.lmp.extract_global("sublo_lambda"), [0.0, 0.0, 0.0])
         self.assertEqual(self.lmp.extract_global("subhi_lambda"), [1.0, 1.0, 1.0])
+
+        # processor grid
+        self.assertEqual(self.lmp.extract_global("procgrid"), [1,1,1])
+        self.lmp.command("comm_style tiled")
+        self.lmp.command("run 0 post no")
+        self.lmp.command("balance 0.1 rcb")
+        self.assertEqual(self.lmp.extract_global("procgrid"), None)
+
+    def test_extract_pair1(self):
+        self.lmp.command("region box block 0 1 0 1 0 1")
+        self.lmp.command("create_box 3 box")
+        self.lmp.command("mass * 1.0")
+        self.lmp.command("pair_style lj/cut 3.0")
+        self.lmp.command("pair_coeff 1 1 1.0 1.0")
+        self.lmp.command("pair_coeff 2 2 1.5 2.0")
+        self.lmp.command("pair_coeff 3 3 1.0 3.0")
+        self.lmp.command("run 0 post no")
+        self.assertEqual(self.lmp.extract_pair_dimension("epsilon"), 2)
+        self.assertEqual(self.lmp.extract_pair_dimension("sigma"), 2)
+        self.assertEqual(self.lmp.extract_pair_dimension("cut_coul"), None)
+        sigma = self.lmp.extract_pair("sigma")
+        self.assertEqual(sigma[1][1], 1.0)
+        self.assertEqual(sigma[2][2], 2.0)
+        self.assertEqual(sigma[3][3], 3.0)
+        self.assertEqual(sigma[1][2], math.sqrt(2.0))
+
+    @unittest.skipIf(not has_streitz, "Pair extract for coul/streitz test")
+    def test_extract_pair2(self):
+        self.lmp.command("units metal")
+        self.lmp.command("atom_style charge")
+        self.lmp.command("region box block 0 1 0 1 0 1")
+        self.lmp.command("create_box 2 box")
+        self.lmp.command("mass * 1.0")
+        self.lmp.command("pair_style coul/streitz 12.0 wolf 0.31")
+        self.lmp.command("pair_coeff * * AlO.streitz Al O")
+        self.lmp.command("run 0 post no")
+
+        self.assertEqual(self.lmp.extract_pair_dimension("chi"), 1)
+        self.assertEqual(self.lmp.extract_pair_dimension("scale"), 2)
+        self.assertEqual(self.lmp.extract_pair_dimension("cut_coul"), 0)
+        self.assertEqual(self.lmp.extract_pair_dimension("epsilon"), None)
+
+        self.assertEqual(self.lmp.extract_pair("cut_coul"), 12.0)
+        self.assertEqual(self.lmp.extract_pair("chi"), [0.0, 0.0, 5.484763])
+        scale = self.lmp.extract_pair("scale")
+        self.assertEqual(scale[0][0], 0.0);
+        self.assertEqual(scale[0][1], 0.0);
+        self.assertEqual(scale[1][1], 1.0);
+        self.assertEqual(scale[1][2], 1.0);
+        self.assertEqual(scale[2][2], 1.0);
 
     def test_create_atoms(self):
         self.lmp.command("boundary f p m")
@@ -607,6 +760,19 @@ create_atoms 1 single &
                 self.assertEqual(vel[i][0:3],result[i][3])
                 self.assertEqual(self.lmp.decode_image_flags(img[i]), result[i][4])
 
+    def test_map_atom(self):
+        self.lmp.command('shell cd ' + os.environ['TEST_INPUT_DIR'])
+        self.lmp.command("newton on on")
+        self.lmp.file("in.fourmol")
+        self.lmp.command("run 4 post no")
+        sometags = [1, 10, 25, 29]
+        tags = self.lmp.extract_atom("id")
+        sametag = self.lmp.extract_global("sametag")
+        for mytag in sometags:
+            myidx = self.lmp.map_atom(mytag)
+            self.assertEqual(mytag, tags[myidx])
+            if sametag[myidx] < 0: continue
+            self.assertEqual(mytag, tags[sametag[myidx]])
 
 ##############################
 if __name__ == "__main__":

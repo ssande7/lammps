@@ -26,7 +26,7 @@
 #include <cmath>
 #include <cstring>
 
-#define EPSILON 1e-10
+static constexpr double EPSILON = 1e-10;
 
 using namespace LAMMPS_NS;
 
@@ -37,6 +37,10 @@ BondBPMSpring::BondBPMSpring(LAMMPS *_lmp) :
 {
   partial_flag = 1;
   smooth_flag = 1;
+  normalize_flag = 0;
+
+  nhistory = 1;
+  id_fix_bond_history = utils::strdup("HISTORY_BPM_SPRING");
 
   single_extra = 1;
   svector = new double[1];
@@ -136,6 +140,9 @@ void BondBPMSpring::compute(int eflag, int vflag)
     store_data();
   }
 
+  if (hybrid_flag)
+    fix_bond_history->compress_history();
+
   int i1, i2, itmp, n, type;
   double delx, dely, delz, delvx, delvy, delvz;
   double e, rsq, r, r0, rinv, smooth, fbond, dot;
@@ -190,7 +197,10 @@ void BondBPMSpring::compute(int eflag, int vflag)
     }
 
     rinv = 1.0 / r;
-    fbond = k[type] * (r0 - r);
+    if (normalize_flag)
+      fbond = -k[type] * e;
+    else
+      fbond = k[type] * (r0 - r);
 
     delvx = v[i1][0] - v[i2][0];
     delvy = v[i1][1] - v[i2][1];
@@ -222,6 +232,9 @@ void BondBPMSpring::compute(int eflag, int vflag)
 
     if (evflag) ev_tally(i1, i2, nlocal, newton_bond, 0.0, fbond, delx, dely, delz);
   }
+
+  if (hybrid_flag)
+    fix_bond_history->uncompress_history();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -279,14 +292,6 @@ void BondBPMSpring::init_style()
 
   if (comm->ghost_velocity == 0)
     error->all(FLERR, "Bond bpm/spring requires ghost atoms store velocity");
-
-  if (!id_fix_bond_history) {
-    id_fix_bond_history = utils::strdup("HISTORY_BPM_SPRING");
-    fix_bond_history = dynamic_cast<FixBondHistory *>(modify->replace_fix(
-        id_fix_dummy2, fmt::format("{} all BOND_HISTORY 0 1", id_fix_bond_history), 1));
-    delete[] id_fix_dummy2;
-    id_fix_dummy2 = nullptr;
-  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -301,6 +306,10 @@ void BondBPMSpring::settings(int narg, char **arg)
     if (strcmp(arg[iarg], "smooth") == 0) {
       if (iarg + 1 > narg) error->all(FLERR, "Illegal bond bpm command, missing option for smooth");
       smooth_flag = utils::logical(FLERR, arg[iarg + 1], false, lmp);
+      i += 1;
+    } else if (strcmp(arg[iarg], "normalize") == 0) {
+      if (iarg + 1 > narg) error->all(FLERR, "Illegal bond bpm command, missing option for normalize");
+      normalize_flag = utils::logical(FLERR, arg[iarg + 1], false, lmp);
       i += 1;
     } else {
       error->all(FLERR, "Illegal bond bpm command, invalid argument {}", arg[iarg]);
@@ -376,7 +385,11 @@ double BondBPMSpring::single(int type, double rsq, int i, int j, double &fforce)
 
   double r = sqrt(rsq);
   double rinv = 1.0 / r;
-  fforce = k[type] * (r0 - r);
+
+  if (normalize_flag)
+    fforce = k[type] * (r0 - r) / r0;
+  else
+    fforce = k[type] * (r0 - r);
 
   double **x = atom->x;
   double **v = atom->v;

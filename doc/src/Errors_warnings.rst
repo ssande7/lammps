@@ -23,7 +23,7 @@ Doc page with :doc:`ERROR messages <Errors_messages>`
    adjusted to match the user-specified accuracy.
 
 *Angle atoms missing at step %ld*
-   One or more of 3 atoms needed to compute a particular angle are
+   One or more of three atoms needed to compute a particular angle are
    missing on this processor.  Typically this is because the pairwise
    cutoff is set too short or the angle has blown apart and an atom is
    too far away.
@@ -109,9 +109,9 @@ Doc page with :doc:`ERROR messages <Errors_messages>`
 *Communication cutoff is shorter than a bond length based estimate. This may lead to errors.*
    Since LAMMPS stores topology data with individual atoms, all atoms
    comprising a bond, angle, dihedral or improper must be present on any
-   sub-domain that "owns" the atom with the information, either as a
+   subdomain that "owns" the atom with the information, either as a
    local or a ghost atom. The communication cutoff is what determines up
-   to what distance from a sub-domain boundary ghost atoms are created.
+   to what distance from a subdomain boundary ghost atoms are created.
    The communication cutoff is by default the largest non-bonded cutoff
    plus the neighbor skin distance, but for short or non-bonded cutoffs
    and/or long bonds, this may not be sufficient. This warning indicates
@@ -233,7 +233,7 @@ Doc page with :doc:`ERROR messages <Errors_messages>`
    style.
 
 *Fix langevin gjf using random gaussians is not implemented with kokkos*
-This will most likely cause errors in kinetic fluctuations.
+   This will most likely cause errors in kinetic fluctuations.
 
 *Fix property/atom mol or charge w/out ghost communication*
    A model typically needs these properties defined for ghost atoms.
@@ -324,7 +324,7 @@ This will most likely cause errors in kinetic fluctuations.
    Specifically they are further apart than half a periodic box length.
    Or they are more than a box length apart in a non-periodic dimension.
    This is usually due to the initial data file not having correct image
-   flags for the 2 atoms in a bond that straddles a periodic boundary.
+   flags for the two atoms in a bond that straddles a periodic boundary.
    They should be different by 1 in that case.  This is a warning because
    inconsistent image flags will not cause problems for dynamics or most
    LAMMPS simulations.  However they can cause problems when such atoms
@@ -351,7 +351,7 @@ This will most likely cause errors in kinetic fluctuations.
    Self-explanatory.
 
 *Kspace_modify slab param < 2.0 may cause unphysical behavior*
-   The kspace_modify slab parameter should be larger to insure periodic
+   The kspace_modify slab parameter should be larger to ensure periodic
    grids padded with empty space do not overlap.
 
 *Less insertions than requested*
@@ -398,7 +398,7 @@ This will most likely cause errors in kinetic fluctuations.
    Lost atoms are checked for each time thermo output is done.  See the
    thermo_modify lost command for options.  Lost atoms usually indicate
    bad dynamics, e.g. atoms have been blown far out of the simulation
-   box, or moved further than one processor's sub-domain away before
+   box, or moved further than one processor's subdomain away before
    reneighboring.
 
 *MSM mesh too small, increasing to 2 points in each direction*
@@ -491,7 +491,7 @@ This will most likely cause errors in kinetic fluctuations.
 *Neighbor exclusions used with KSpace solver may give inconsistent Coulombic energies*
    This is because excluding specific pair interactions also excludes
    them from long-range interactions which may not be the desired effect.
-   The special_bonds command handles this consistently by insuring
+   The special_bonds command handles this consistently by ensuring
    excluded (or weighted) 1-2, 1-3, 1-4 interactions are treated
    consistently by both the short-range pair style and the long-range
    solver.  This is not done for exclusions of charged atom pairs via the
@@ -545,7 +545,7 @@ This will most likely cause errors in kinetic fluctuations.
    If there are other fixes that act immediately after the initial stage
    of time integration within a timestep (i.e. after atoms move), then
    the command that sets up the dynamic group should appear after those
-   fixes.  This will insure that dynamic group assignments are made
+   fixes.  This will ensure that dynamic group assignments are made
    after all atoms have moved.
 
 *One or more respa levels compute no forces*
@@ -582,13 +582,13 @@ This will most likely cause errors in kinetic fluctuations.
    needed.  The requested volume fraction may be too high, or other atoms
    may be in the insertion region.
 
-*Proc sub-domain size < neighbor skin, could lead to lost atoms*
+*Proc subdomain size < neighbor skin, could lead to lost atoms*
    The decomposition of the physical domain (likely due to load
-   balancing) has led to a processor's sub-domain being smaller than the
+   balancing) has led to a processor's subdomain being smaller than the
    neighbor skin in one or more dimensions.  Since reneighboring is
    triggered by atoms moving the skin distance, this may lead to lost
    atoms, if an atom moves all the way across a neighboring processor's
-   sub-domain before reneighboring is triggered.
+   subdomain before reneighboring is triggered.
 
 *Reducing PPPM order b/c stencil extends beyond nearest neighbor processor*
    This may lead to a larger grid than desired.  See the kspace_modify overlap
@@ -751,13 +751,6 @@ This will most likely cause errors in kinetic fluctuations.
 *Too many neighbors in CNA for %d atoms*
    More than the maximum # of neighbors was found multiple times.  This
    was unexpected.
-
-*Triclinic box skew is large*
-   The displacement in a skewed direction is normally required to be less
-   than half the box length in that dimension.  E.g. the xy tilt must be
-   between -half and +half of the x box length.  You have relaxed the
-   constraint using the box tilt command, but the warning means that a
-   LAMMPS simulation may be inefficient as a result.
 
 *Use special bonds = 0,1,1 with bond style fene*
    Most FENE models need this setting for the special_bonds command.

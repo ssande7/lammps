@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing Author: Jacob Gissinger (jacob.r.gissinger@gmail.com)
+   Contributing Author: Jacob Gissinger (jgissing@stevens.edu)
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
@@ -33,7 +33,8 @@ namespace LAMMPS_NS {
 
 class FixBondReact : public Fix {
  public:
-  enum { MAXLINE = 256 };    // max length of line read from files
+  enum { MAXLINE = 1024 };   // max length of line read from files
+  enum { MAXNAME = 256 };    // max character length of react-ID
   enum { MAXCONIDS = 4 };    // max # of IDs used by any constraint
   enum { MAXCONPAR = 5 };    // max # of constraint parameters
 
@@ -45,6 +46,7 @@ class FixBondReact : public Fix {
   void init_list(int, class NeighList *) override;
   void post_integrate() override;
   void post_integrate_respa(int, int) override;
+  void post_force(int) override;
 
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
@@ -61,7 +63,7 @@ class FixBondReact : public Fix {
   int *iatomtype, *jatomtype;
   int *seed;
   double **cutsq, *fraction;
-  int *max_rxn, *nlocalskips, *nghostlyskips;
+  int *max_rxn, *nlocalkeep, *nghostlykeep;
   tagint lastcheck;
   int stabilization_flag;
   int reset_mol_ids_flag;
@@ -70,7 +72,9 @@ class FixBondReact : public Fix {
   int **store_rxn_count;
   int *stabilize_steps_flag;
   int *custom_charges_fragid;
-  int *rescale_charges_flag;
+  int *rescale_charges_flag;   // if nonzero, indicates number of atoms whose charges are updated
+  int rescale_charges_anyflag; // indicates if any reactions do charge rescaling
+  double *mol_total_charge;    // sum of charges of post-reaction atoms whose charges are updated
   int *create_atoms_flag;
   int *modify_create_fragid;
   double *overlapsq;
@@ -136,7 +140,7 @@ class FixBondReact : public Fix {
   int avail_guesses;     // num of restore points available
   int *guess_branch;     // used when there is more than two choices when guessing
   int **restore_pt;      // contains info about restore points
-  tagint **restore;      // contaings info about restore points
+  tagint **restore;      // contains info about restore points
   int *pioneer_count;    // counts pioneers
 
   int **edge;                // atoms in molecule templates with incorrect valences
@@ -154,13 +158,17 @@ class FixBondReact : public Fix {
   int pion, neigh, trace;    // important indices for various loops. required for restore points
   int lcl_inst;              // reaction instance
   tagint **glove;            // 1st colmn: pre-reacted template, 2nd colmn: global IDs
-  // for all mega_gloves and global_mega_glove: first row is the ID of bond/react
-  tagint **local_mega_glove;      // consolidation local of reaction instances
-  tagint **ghostly_mega_glove;    // consolidation nonlocal of reaction instances
-  tagint **global_mega_glove;     // consolidation (inter-processor) of gloves
+  // for all mega_gloves: first row is the ID of bond/react
+  // 'cuff' leaves room for additional values carried around
+  int cuff;                       // default = 1, w/ rescale_charges_flag = 2
+  double **my_mega_glove;         // local + ghostly reaction instances
+  double **local_mega_glove;      // consolidation of local reaction instances
+  double **ghostly_mega_glove;    // consolidation of nonlocal reaction instances
+  double **global_mega_glove;     // consolidation (inter-processor) of gloves
                                   // containing nonlocal atoms
 
   int *localsendlist;      // indicates ghosts of other procs
+  int my_num_mega;         // local + ghostly reaction instances (on this proc)
   int local_num_mega;      // num of local reaction instances
   int ghostly_num_mega;    // num of ghostly reaction instances
   int global_megasize;     // num of reaction instances in global_mega_glove
@@ -188,6 +196,7 @@ class FixBondReact : public Fix {
   int check_constraints();
   void get_IDcoords(int, int, double *);
   double get_temperature(tagint **, int, int);
+  double get_totalcharge();
   void customvarnames();    // get per-atom variables names used by custom constraint
   void get_customvars();    // evaluate local values for variables names used by custom constraint
   double custom_constraint(const std::string &);    // evaulate expression for custom constraint
@@ -207,7 +216,7 @@ class FixBondReact : public Fix {
   void glove_ghostcheck();
   void ghost_glovecast();
   void update_everything();
-  int insert_atoms(tagint **, int);
+  int insert_atoms_setup(tagint **, int);
   void unlimit_bond(); // removes atoms from stabilization, and other post-reaction every-step operations
   void dedup_mega_gloves(int);    //dedup global mega_glove
   void write_restart(FILE *) override;
@@ -216,7 +225,7 @@ class FixBondReact : public Fix {
   // store restart data
   struct Set {
     int nreacts;
-    char rxn_name[MAXLINE];
+    char rxn_name[MAXNAME];
     int reaction_count_total;
     int max_rate_limit_steps;
   };
@@ -236,6 +245,15 @@ class FixBondReact : public Fix {
   class Compute *cperbond;    // pointer to 'compute bond/local' used by custom constraint ('rxnbond' function)
   std::map<std::set<tagint>, int> atoms2bond;    // maps atom pair to index of local bond array
   std::vector<std::vector<Constraint>> constraints;
+
+  tagint addatomtag;
+  struct AddAtom {
+    tagint tag, molecule;
+    int type, mask;
+    imageint image;
+    double rmass, x[3], v[3];
+  };
+  std::vector<AddAtom> addatoms;
 
   // DEBUG
 

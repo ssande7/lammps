@@ -33,8 +33,8 @@
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
-#define DELTA 4
-#define BIG 1.0e20
+static constexpr int DELTA = 4;
+static constexpr double BIG = 1.0e20;
 
 // template for factory function:
 // there will be one instance for each style keyword in the respective style_xxx.h files
@@ -80,6 +80,7 @@ Modify::Modify(LAMMPS *lmp) : Pointers(lmp)
 
   list_timeflag = nullptr;
 
+  restart_pbc_any = 0;
   nfix_restart_global = 0;
   id_restart_global = style_restart_global = nullptr;
   state_restart_global = nullptr;
@@ -187,14 +188,12 @@ void Modify::init()
   //   since any of them may be invoked by initial thermo
   // do not clear out invocation times stored within a compute,
   //   b/c some may be holdovers from previous run, like for ave fixes
+  // perform check whether extscalar, extvector, and extarray have been
+  //   set when scalar_flag, vector_flag, or array_flag are true.
 
   for (i = 0; i < ncompute; i++) {
     compute[i]->init();
-    compute[i]->invoked_scalar = -1;
-    compute[i]->invoked_vector = -1;
-    compute[i]->invoked_array = -1;
-    compute[i]->invoked_peratom = -1;
-    compute[i]->invoked_local = -1;
+    compute[i]->init_flags();
   }
   addstep_compute_all(update->ntimestep);
 
@@ -203,8 +202,13 @@ void Modify::init()
   //   used to b/c temperature computes called fix->dof() in their init,
   //   and fix rigid required its own init before its dof() could be called,
   //   but computes now do their DOF in setup()
+  // perform check whether extscalar, extvector, and extarray have been
+  //   set when scalar_flag, vector_flag, or array_flag are true.
 
-  for (i = 0; i < nfix; i++) fix[i]->init();
+  for (i = 0; i < nfix; i++) {
+    fix[i]->init();
+    fix[i]->init_flags();
+  }
 
   // set global flag if any fix has its restart_pbc flag set
 
@@ -1084,7 +1088,7 @@ int Modify::find_fix(const std::string &id)
 {
   if (id.empty()) return -1;
   for (int ifix = 0; ifix < nfix; ifix++)
-    if (id == fix[ifix]->id) return ifix;
+    if (fix[ifix] && (id == fix[ifix]->id)) return ifix;
   return -1;
 }
 
@@ -1097,7 +1101,7 @@ Fix *Modify::get_fix_by_id(const std::string &id) const
 {
   if (id.empty()) return nullptr;
   for (int ifix = 0; ifix < nfix; ifix++)
-    if (id == fix[ifix]->id) return fix[ifix];
+    if (fix[ifix] && (id == fix[ifix]->id)) return fix[ifix];
   return nullptr;
 }
 
@@ -1111,9 +1115,9 @@ const std::vector<Fix *> Modify::get_fix_by_style(const std::string &style) cons
   std::vector<Fix *> matches;
   if (style.empty()) return matches;
 
-  for (int ifix = 0; ifix < nfix; ifix++)
-    if (utils::strmatch(fix[ifix]->style, style)) matches.push_back(fix[ifix]);
-
+  for (int ifix = 0; ifix < nfix; ifix++) {
+    if (fix[ifix] && utils::strmatch(fix[ifix]->style, style)) matches.push_back(fix[ifix]);
+  }
   return matches;
 }
 
@@ -1348,7 +1352,7 @@ int Modify::find_compute(const std::string &id)
 {
   if (id.empty()) return -1;
   for (int icompute = 0; icompute < ncompute; icompute++)
-    if (id == compute[icompute]->id) return icompute;
+    if (compute[icompute] && (id == compute[icompute]->id)) return icompute;
   return -1;
 }
 
@@ -1361,7 +1365,7 @@ Compute *Modify::get_compute_by_id(const std::string &id) const
 {
   if (id.empty()) return nullptr;
   for (int icompute = 0; icompute < ncompute; icompute++)
-    if (id == compute[icompute]->id) return compute[icompute];
+    if (compute[icompute] && (id == compute[icompute]->id)) return compute[icompute];
   return nullptr;
 }
 
@@ -1375,9 +1379,10 @@ const std::vector<Compute *> Modify::get_compute_by_style(const std::string &sty
   std::vector<Compute *> matches;
   if (style.empty()) return matches;
 
-  for (int icompute = 0; icompute < ncompute; icompute++)
-    if (utils::strmatch(compute[icompute]->style, style)) matches.push_back(compute[icompute]);
-
+  for (int icompute = 0; icompute < ncompute; icompute++) {
+    if (compute[icompute] && utils::strmatch(compute[icompute]->style, style))
+      matches.push_back(compute[icompute]);
+  }
   return matches;
 }
 

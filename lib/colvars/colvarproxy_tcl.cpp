@@ -8,6 +8,7 @@
 // Colvars repository at GitHub.
 
 #include <sstream>
+#include <iostream>
 
 #include "colvarmodule.h"
 #include "colvarproxy.h"
@@ -82,7 +83,7 @@ int colvarproxy_tcl::tcl_run_file(std::string const &fileName)
   Tcl_Interp *const interp = get_tcl_interp();
   int err = Tcl_EvalFile(interp, fileName.c_str());
   if (err != TCL_OK) {
-    cvm::log("Error while executing Tcl script file" + fileName + ":\n");
+    cvm::log("Error while executing Tcl script file \"" + fileName + "\":\n");
     cvm::error(Tcl_GetStringResult(interp));
     return COLVARS_ERROR;
   }

@@ -63,25 +63,6 @@ struct s_EVM_FLOAT {
     vp[4] += rhs.vp[4];
     vp[5] += rhs.vp[5];
   }
-
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile s_EVM_FLOAT &rhs) volatile {
-    evdwl += rhs.evdwl;
-    ecoul += rhs.ecoul;
-    emol += rhs.emol;
-    v[0] += rhs.v[0];
-    v[1] += rhs.v[1];
-    v[2] += rhs.v[2];
-    v[3] += rhs.v[3];
-    v[4] += rhs.v[4];
-    v[5] += rhs.v[5];
-    vp[0] += rhs.vp[0];
-    vp[1] += rhs.vp[1];
-    vp[2] += rhs.vp[2];
-    vp[3] += rhs.vp[3];
-    vp[4] += rhs.vp[4];
-    vp[5] += rhs.vp[5];
-  }
 };
 typedef struct s_EVM_FLOAT EVM_FLOAT;
 
@@ -123,6 +104,10 @@ class DihedralCharmmKokkos : public DihedralCharmm {
         const F_FLOAT &evdwl, const F_FLOAT &ecoul, const F_FLOAT &fpair, const F_FLOAT &delx,
                 const F_FLOAT &dely, const F_FLOAT &delz) const;
 
+  typedef typename KKDevice<DeviceType>::value KKDeviceType;
+  Kokkos::DualView<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType> k_eatom;
+  Kokkos::DualView<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType> k_vatom;
+
  protected:
 
   class NeighborKokkos *neighborKK;
@@ -133,9 +118,6 @@ class DihedralCharmmKokkos : public DihedralCharmm {
   typename AT::t_f_array f;
   typename AT::t_int_2d dihedrallist;
 
-  typedef typename KKDevice<DeviceType>::value KKDeviceType;
-  Kokkos::DualView<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType> k_eatom;
-  Kokkos::DualView<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType> k_vatom;
   Kokkos::View<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_eatom;
   Kokkos::View<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_vatom;
 

@@ -116,11 +116,12 @@ are parameterized in terms of LAMMPS :doc:`metal units <units>`.
 
 .. note::
 
-   Note that unlike for other potentials, cutoffs for EAM
-   potentials are not set in the pair_style or pair_coeff command; they
-   are specified in the EAM potential files themselves.  Likewise, the
-   EAM potential files list atomic masses; thus you do not need to use
-   the :doc:`mass <mass>` command to specify them.
+   Note that unlike for other potentials, cutoffs for EAM potentials are not
+   set in the pair_style or pair_coeff command; they are specified in the EAM
+   potential files themselves.  Likewise, valid EAM potential files usually
+   contain atomic masses; thus you may not need to use the :doc:`mass <mass>`
+   command to specify them, unless the potential file uses a dummy value (e.g.
+   0.0). LAMMPS will print a warning, if this is the case.
 
 There are web sites that distribute and document EAM potentials stored
 in DYNAMO or other formats:
@@ -138,6 +139,21 @@ The OpenKIM Project at
 `https://openkim.org/browse/models/by-type <https://openkim.org/browse/models/by-type>`_
 provides EAM potentials that can be used directly in LAMMPS with the
 :doc:`kim command <kim_commands>` interface.
+
+.. warning::
+
+   The EAM potential files tabulate the embedding energy as a function
+   of the local electron density :math:`\rho`.  When atoms get too
+   close, this electron density may exceed the range for which the
+   embedding energy was tabulated for.  To avoid crashes, LAMMPS will
+   assume a linearly increasing embedding energy for electron densities
+   beyond the maximum tabulated value.  LAMMPS will print a warning when
+   this happens.  It may be acceptable at the beginning of an
+   equilibration (e.g. when using randomized coordinates) but would be a
+   big concern for accuracy if it happens during production runs.  The
+   EAM potential file triggering the warning during production is thus
+   not a good choice, and the EAM model in general not likely a good
+   model for the kind of system under investigation.
 
 ----------
 

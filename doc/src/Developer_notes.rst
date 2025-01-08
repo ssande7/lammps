@@ -11,6 +11,7 @@ Available topics are:
 
 - `Reading and parsing of text and text files`_
 - `Requesting and accessing neighbor lists`_
+- `Choosing between a custom atom style, fix property/atom, and fix STORE/ATOM`_
 - `Fix contributions to instantaneous energy, virial, and cumulative energy`_
 - `KSpace PPPM FFT grids`_
 
@@ -19,7 +20,7 @@ Available topics are:
 Reading and parsing of text and text files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-It is frequently required for a class in LAMMPS to read in additional
+Classes in LAMMPS frequently need to read in additional
 data from a file, e.g. potential parameters from a potential file for
 manybody potentials.  LAMMPS provides several custom classes and
 convenience functions to simplify the process.  They offer the
@@ -73,6 +74,8 @@ when converting "12.5", while the ValueTokenizer class will throw an
 :cpp:func:`ValueTokenizer::next_int()
 <LAMMPS_NS::ValueTokenizer::next_int>` is called on the same string.
 
+.. _request-neighbor-list:
+
 Requesting and accessing neighbor lists
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -102,7 +105,7 @@ build is then :doc:`processed in parallel <Developer_par_neigh>`.
 The most commonly required neighbor list is a so-called "half" neighbor
 list, where each pair of atoms is listed only once (except when the
 :doc:`newton command setting <newton>` for pair is off; in that case
-pairs straddling sub-domains or periodic boundaries will be listed twice).
+pairs straddling subdomains or periodic boundaries will be listed twice).
 Thus these are the default settings when a neighbor list request is created in:
 
 .. code-block:: c++
@@ -125,9 +128,8 @@ that determines the kind of neighbor list requested.  The default value
 used here asks for a perpetual "half" neighbor list.
 
 Non-default values of the second argument need to be used to adjust a
-neighbor list request to the specific needs of a style an additional
-request flag is needed.  The :doc:`tersoff <pair_tersoff>` pair style,
-for example, needs a "full" neighbor list:
+neighbor list request to the specific needs of a style.  The :doc:`tersoff
+<pair_tersoff>` pair style, for example, needs a "full" neighbor list:
 
 .. code-block:: c++
 
@@ -138,8 +140,8 @@ for example, needs a "full" neighbor list:
    }
 
 When a pair style supports r-RESPA time integration with different cutoff regions,
-the request flag may depend on the corresponding r-RESPA settings. Here an example
-from pair style lj/cut:
+the request flag may depend on the corresponding r-RESPA settings. Here is an
+example from pair style lj/cut:
 
 .. code-block:: c++
 
@@ -157,7 +159,7 @@ from pair style lj/cut:
    }
 
 Granular pair styles need neighbor lists based on particle sizes and not cutoff
-and also may require to have the list of previous neighbors available ("history").
+and also may need to store data across timesteps ("history").
 For example with:
 
 .. code-block:: c++
@@ -166,7 +168,7 @@ For example with:
    else neighbor->add_request(this, NeighConst::REQ_SIZE);
 
 In case a class would need to make multiple neighbor list requests with different
-settings each request can set an id which is then used in the corresponding
+settings, each request can set an id which is then used in the corresponding
 ``init_list()`` function to assign it to the suitable pointer variable. This is
 done for example by the :doc:`pair style meam <pair_meam>`:
 
@@ -216,6 +218,30 @@ command:
 
    neighbor->add_request(this, "delete_atoms", NeighConst::REQ_FULL);
 
+Choosing between a custom atom style, fix property/atom, and fix STORE/ATOM
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+There are multiple ways to manage per-atom data within LAMMPS.  Often
+the per-atom storage is only used locally and managed by the class that
+uses it.  If the data has to persist between multiple time steps and
+migrate with atoms when they move from sub-domain to sub-domain or
+across periodic boundaries, then using a custom atom style, or :doc:`fix
+property/atom <fix_property_atom>`, or the internal fix STORE/ATOM are
+possible options.
+
+- Using the atom style is usually the most programming effort and mostly
+  needed when the per-atom data is an integral part of the model like a
+  per-atom charge or diameter and thus should be part of the Atoms
+  section of a :doc:`data file <read_data>`.
+
+- Fix property/atom is useful if the data is optional or should be
+  entered by the user, or accessed as a (named) custom property. In this
+  case the fix should be entered as part of the input (and not
+  internally) which allows to enter and store its content with data files.
+
+- Fix STORE/ATOM should be used when the data should be accessed internally
+  only and thus the fix can be created internally.
+
 Fix contributions to instantaneous energy, virial, and cumulative energy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -252,8 +278,8 @@ And here is how the code operates:
 * The :doc:`thermo_style custom <thermo_style>` command defines
   *ecouple* and *econserve* keywords.
 * These keywords sum the energy contributions from all the
-  *ecouple_flag* = 1 fixes by invoking the energy_couple() method in
-  the Modify class, which calls the compute_scalar() method of each
+  *ecouple_flag* = 1 fixes by invoking the *energy_couple()* method in
+  the Modify class, which calls the *compute_scalar()* method of each
   fix in the list.
 
 ------------------
@@ -293,19 +319,19 @@ The fix must also do the following:
 
    The ev_init() and ev_tally() methods also account for global and
    peratom virial contributions.  Thus you do not need to invoke the
-   v_init() and v_tally() methods, if the fix also calculates peratom
+   v_init() and v_tally() methods if the fix also calculates peratom
    energies.
 
 The fix must also specify whether (by default) to include or exclude
 these contributions to the global/peratom energy/virial of the system.
-For the fix to include the contributions, set either of both of these
+For the fix to include the contributions, set either or both of these
 variables in the constructor:
 
 * *thermo_energy* = 1, for global and peratom energy
 * *thermo_virial* = 1, for global and peratom virial
 
 Note that these variables are zeroed in fix.cpp.  Thus if you don't
-set the variables, the contributions will be excluded (by default)
+set the variables, the contributions will be excluded (by default).
 
 However, the user has ultimate control over whether to include or
 exclude the contributions of the fix via the :doc:`fix modify
@@ -361,7 +387,7 @@ allocated as a 1d vector or 3d array.  Either way, the ordering of
 values within contiguous memory x fastest, then y, z slowest.
 
 For the ``3d decomposition`` of the grid, the global grid is
-partitioned into bricks that correspond to the sub-domains of the
+partitioned into bricks that correspond to the subdomains of the
 simulation box that each processor owns.  Often, this is a regular 3d
 array (Px by Py by Pz) of bricks, where P = number of processors =
 Px * Py * Pz.  More generally it can be a tiled decomposition, where
@@ -379,9 +405,11 @@ processor owns, within the global grid:
 
 .. parsed-literal::
 
-   nxlo_in,nxhi_in,nylo_in,nyhi_in,nzlo_in,nzhi_in = 3d decomposition brick
-   nxlo_fft,nxhi_fft,nylo_fft,nyhi_fft,nzlo_fft,nzhi_fft = FFT decomposition brick
-   nxlo_out,nxhi_out,nylo_out,nyhi_out,nzlo_out,nzhi_out = 3d decomposition brick + ghost cells
+   nFOO_in = 3d decomposition brick
+   nFOO_fft = FFT decomposition brick
+   nFOO_out = 3d decomposition brick + ghost cells
+
+where ``FOO`` corresponds to ``xlo, xhi, ylo, yhi, zlo,`` or ``zhi``.
 
 The ``in`` and ``fft`` indices are from 0 to N-1 inclusive in each
 dimension, where N is the grid size.

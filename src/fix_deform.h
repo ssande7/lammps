@@ -29,6 +29,9 @@ class FixDeform : public Fix {
   int remapflag;     // whether x,v are remapped across PBC
   int dimflag[6];    // which dims are deformed
 
+  enum { NONE, FINAL, DELTA, SCALE, VEL, ERATE, TRATE, VOLUME, WIGGLE, VARIABLE, PRESSURE, PMEAN, ERATERS };
+  enum { ONE_FROM_ONE, ONE_FROM_TWO, TWO_FROM_ONE };
+
   FixDeform(class LAMMPS *, int, char **);
   ~FixDeform() override;
   int setmask() override;
@@ -37,12 +40,9 @@ class FixDeform : public Fix {
   void end_of_step() override;
   void post_integrate() override;
   void post_integrate_respa(int,int) override;
-  void write_restart(FILE *) override;
-  void restart(char *buf) override;
+  void virtual write_restart(FILE *) override;
+  void virtual restart(char *buf) override;
   double memory_usage() override;
-
-  void update_box();
-  double calc_xz_correction(double);
 
  protected:
   int triclinic, scaleflag, flipflag;
@@ -63,8 +63,6 @@ class FixDeform : public Fix {
 
   double TWOPI;
 
-  enum{NONE=0,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
-
   struct Set {
     int style, substyle;
     double flo, fhi, ftilt;
@@ -82,7 +80,15 @@ class FixDeform : public Fix {
   };
   Set *set;
 
+  std::vector<int> leftover_iarg;
+  int iarg_options_start;
+
   void options(int, char **);
+  void update_box();
+  void virtual apply_volume();
+  void apply_strain();
+  void update_domain();
+  double calc_xz_correction(double);
 
   // Allow fix nvt/sllod to check deform parameters for correctness
   friend class FixNVTSllod;

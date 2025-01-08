@@ -30,8 +30,7 @@
 
 using namespace LAMMPS_NS;
 
-#define MAXLINE 1024
-#define MAXWORD 3
+static constexpr int MAXLINE = 1024;
 
 /* ---------------------------------------------------------------------- */
 
@@ -90,7 +89,8 @@ void MLIAPDescriptorSO3::read_paramfile(char *paramfilename)
                  utils::getsyserror());
   }
 
-  char line[MAXLINE], *ptr;
+  char line[MAXLINE] = {'\0'};
+  char *ptr;
   int eof = 0;
   int n, nwords;
 
@@ -232,7 +232,7 @@ void MLIAPDescriptorSO3::compute_forces(class MLIAPData *data)
   for (int ii = 0; ii < data->nlistatoms; ii++) {
     const int i = data->iatoms[ii];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     const int jnum = data->numneighs[ii];
 
@@ -276,7 +276,7 @@ void MLIAPDescriptorSO3::compute_force_gradients(class MLIAPData *data)
   for (int ii = 0; ii < data->nlistatoms; ii++) {
     const int i = data->iatoms[ii];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     const int jnum = data->numneighs[ii];
 

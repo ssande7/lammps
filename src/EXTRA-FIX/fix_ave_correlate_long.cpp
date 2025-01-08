@@ -121,7 +121,7 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
 
   while (iarg < nargnew) {
     if (strcmp(arg[iarg], "type") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long type", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long type", error);
       if (strcmp(arg[iarg + 1], "auto") == 0)
         type = AUTO;
       else if (strcmp(arg[iarg + 1], "upper") == 0)
@@ -138,23 +138,23 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
         error->all(FLERR, "Unknown fix ave/correlate/long type: {}");
       iarg += 2;
     } else if (strcmp(arg[iarg], "start") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long start", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long start", error);
       startstep = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg], "ncorr") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long ncorr", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long ncorr", error);
       numcorrelators = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg], "nlen") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long nlen", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long nlen", error);
       p = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg], "ncount") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long ncount", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long ncount", error);
       m = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
       iarg += 2;
     } else if (strcmp(arg[iarg], "file") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long file", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long file", error);
       if (comm->me == 0) {
         fp = fopen(arg[iarg + 1], "w");
         if (fp == nullptr)
@@ -166,12 +166,12 @@ FixAveCorrelateLong::FixAveCorrelateLong(LAMMPS *lmp, int narg, char **arg) :
       overwrite = 1;
       iarg += 1;
     } else if (strcmp(arg[iarg], "title1") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long title1", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long title1", error);
       delete[] title1;
       title1 = utils::strdup(arg[iarg + 1]);
       iarg += 2;
     } else if (strcmp(arg[iarg], "title2") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "fix ave/correlate/long title2", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, "fix ave/correlate/long title2", error);
       delete[] title2;
       title2 = utils::strdup(arg[iarg + 1]);
       iarg += 2;
@@ -454,6 +454,8 @@ void FixAveCorrelateLong::end_of_step()
         scalar = val.val.f->compute_vector(val.argindex-1);
 
     // evaluate equal-style or vector-style variable
+    // if index exceeds vector length, use a zero value
+    //   this can be useful if vector length is not known a priori
 
     } else if (val.which == ArgInfo::VARIABLE) {
       if (val.argindex == 0)
@@ -462,7 +464,7 @@ void FixAveCorrelateLong::end_of_step()
         double *varvec;
         int nvec = input->variable->compute_vector(val.val.v,&varvec);
         int index = val.argindex;
-        if (nvec < index) scalar = 0.0;
+        if (index > nvec) scalar = 0.0;
         else scalar = varvec[index-1];
       }
     }
@@ -486,7 +488,7 @@ void FixAveCorrelateLong::end_of_step()
 
   if (fp && comm->me == 0) {
     clearerr(fp);
-    if (overwrite) platform::fseek(fp,filepos);
+    if (overwrite) (void) platform::fseek(fp,filepos);
     fmt::print(fp,"# Timestep: {}\n", ntimestep);
     for (unsigned int i=0; i < npcorr; ++i) {
       fprintf(fp, "%lg ", t[i]*update->dt*nevery);
@@ -503,7 +505,7 @@ void FixAveCorrelateLong::end_of_step()
     if (overwrite) {
       bigint fileend = platform::ftell(fp);
       if ((fileend > 0) && (platform::ftruncate(fp,fileend)))
-        error->warning(FLERR,"Error while tuncating output: {}", utils::getsyserror());
+        error->warning(FLERR,"Error while truncating output: {}", utils::getsyserror());
     }
   }
 }
@@ -728,7 +730,7 @@ double FixAveCorrelateLong::memory_usage() {
 void FixAveCorrelateLong::write_restart(FILE *fp) {
   if (comm->me == 0) {
     int nsize = 3*npair*numcorrelators*p + 2*npair*numcorrelators
-                + numcorrelators*p + 2*numcorrelators + 6;
+                + numcorrelators*p + 2*numcorrelators + 7;
     int n=0;
     double *list;
     memory->create(list,nsize,"correlator:list");
@@ -736,6 +738,7 @@ void FixAveCorrelateLong::write_restart(FILE *fp) {
     list[n++] = numcorrelators;
     list[n++] = p;
     list[n++] = m;
+    list[n++] = kmax;
     list[n++] = last_accumulated_step;
     for (int i=0; i < npair; i++)
       for (int j=0; j < numcorrelators; j++) {
@@ -771,6 +774,7 @@ void FixAveCorrelateLong::restart(char *buf)
   int numcorrelatorsin = static_cast<int> (list[n++]);
   int pin = static_cast<int>(list[n++]);
   int min = static_cast<int>(list[n++]);
+  kmax = static_cast<int>(list[n++]);
   last_accumulated_step = static_cast<int>(list[n++]);
 
   if ((npairin!=npair) || (numcorrelatorsin!=numcorrelators) || (pin!=(int)p) || (min!=(int)m))

@@ -37,11 +37,16 @@ class Improper : protected Pointers {
                              // CENTROID_AVAIL = different and implemented
                              // CENTROID_NOTAVAIL = different, not yet implemented
 
+  int symmatoms[4];          // symmetry atom(s) of improper style
+                             // value of 0: interchangable atoms
+                             // value of 1: central atom
+                             // values >1: additional atoms of symmetry
+
   // KOKKOS host/device flag and data masks
 
   ExecutionSpace execution_space;
   unsigned int datamask_read, datamask_modify;
-  int copymode;
+  int copymode, kokkosable;
 
   Improper(class LAMMPS *);
   ~Improper() override;

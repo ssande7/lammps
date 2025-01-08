@@ -30,18 +30,17 @@
 #include "neighbor.h"
 #include "pair.h"
 
-#include <cstring>
 #include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
-#define MAX_LEVELS 10
-#define OFFSET 16384
-#define SMALL 0.00001
+static constexpr int MAX_LEVELS = 10;
+static constexpr int OFFSET = 16384;
 
-enum{REVERSE_RHO,REVERSE_AD,REVERSE_AD_PERATOM};
-enum{FORWARD_RHO,FORWARD_AD,FORWARD_AD_PERATOM};
+enum { REVERSE_RHO, REVERSE_AD, REVERSE_AD_PERATOM };
+enum { FORWARD_RHO, FORWARD_AD, FORWARD_AD_PERATOM };
 
 /* ---------------------------------------------------------------------- */
 
@@ -139,10 +138,6 @@ void MSM::init()
 
   if ((order < 4) || (order > 10) || (order%2 != 0))
     error->all(FLERR,"MSM order must be 4, 6, 8, or 10");
-
-  if (sizeof(FFT_SCALAR) != 8)
-    error->all(FLERR,"Cannot (yet) use single precision with MSM "
-               "(remove -DFFT_SINGLE from Makefile and re-compile)");
 
   // compute two charge force
 
@@ -1030,19 +1025,19 @@ void MSM::set_grid_global()
   int xlevels,ylevels,zlevels;
 
   while (!factorable(nx_max,flag,xlevels)) {
-    double k = log(nx_max)/log(2.0);
+    double k = log((double)nx_max)/log(2.0);
     double r = k - floor(k);
     if (r > 0.5) nx_max++;
     else nx_max--;
   }
   while (!factorable(ny_max,flag,ylevels)) {
-    double k = log(ny_max)/log(2.0);
+    double k = log((double)ny_max)/log(2.0);
     double r = k - floor(k);
     if (r > 0.5) ny_max++;
     else ny_max--;
   }
   while (!factorable(nz_max,flag,zlevels)) {
-    double k = log(nz_max)/log(2.0);
+    double k = log((double)nz_max)/log(2.0);
     double r = k - floor(k);
     if (r > 0.5) nz_max++;
     else nz_max--;
@@ -1607,8 +1602,7 @@ void MSM::direct(int n)
         qtmp = qgridn[icz][icy][icx]; // charge on center grid point
 
         esum = 0.0;
-        if (vflag_either && !scalar_pressure_flag)
-          v0sum = v1sum = v2sum = v3sum = v4sum = v5sum = 0.0;
+        v0sum = v1sum = v2sum = v3sum = v4sum = v5sum = 0.0;
 
         // use hemisphere to avoid double computation of pair-wise
         //   interactions in direct sum (no computations in -z direction)

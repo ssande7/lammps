@@ -14,14 +14,10 @@
 ------------------------------------------------------------------------- */
 
 #include "pair_hybrid_kokkos.h"
-#include <cstring>
+
 #include "atom_kokkos.h"
 #include "force.h"
-#include "pair.h"
-#include "neighbor.h"
-#include "neigh_request.h"
 #include "update.h"
-#include "memory_kokkos.h"
 #include "respa.h"
 #include "atom_masks.h"
 #include "kokkos.h"
@@ -35,12 +31,23 @@ PairHybridKokkos::PairHybridKokkos(LAMMPS *lmp) : PairHybrid(lmp)
   kokkosable = 1;
   atomKK = (AtomKokkos *) atom;
 
- // prevent overlapping host/device computation, which isn't
- //  yet supported by pair_hybrid_kokkos
- execution_space = Device;
+  execution_space = Device;
 
   datamask_read = EMPTY_MASK;
   datamask_modify = EMPTY_MASK;
+}
+
+/* ----------------------------------------------------------------------
+   init specific to this pair style
+------------------------------------------------------------------------- */
+
+void PairHybridKokkos::init_style()
+{
+  PairHybrid::init_style();
+
+  for (int m = 0; m < nstyles; m++)
+    if (styles[m]->execution_space == Host)
+      lmp->kokkos->allow_overlap = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -157,7 +164,6 @@ void PairHybridKokkos::compute(int eflag, int vflag)
         }
       }
     }
-
   }
 
   delete [] saved_special;

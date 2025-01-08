@@ -61,7 +61,7 @@ processors, equals the number of bonds in the system, modified by the
 group parameter as explained below.
 
 All these properties are computed for the pair of atoms in a bond,
-whether the 2 atoms represent a simple diatomic molecule, or are part
+whether the two atoms represent a simple diatomic molecule, or are part
 of some larger molecule.
 
 The value *dist* is the current length of the bond.
@@ -76,10 +76,13 @@ The value *force* is the magnitude of the force acting between the
 pair of atoms in the bond.
 
 The values *fx*, *fy*, and *fz* are the xyz components of
-*force* between the pair of atoms in the bond.
+*force* between the pair of atoms in the bond. For bond styles that apply
+non-central forces, such as :doc:`bond_style bpm/rotational
+<bond_bpm_rotational>`, these values only include the :math:`(x,y,z)`
+components of the normal force component.
 
 The remaining properties are all computed for motion of the two atoms
-relative to the center of mass (COM) velocity of the 2 atoms in the
+relative to the center of mass (COM) velocity of the two atoms in the
 bond.
 
 The value *engvib* is the vibrational kinetic energy of the two atoms

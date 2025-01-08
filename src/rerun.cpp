@@ -26,11 +26,12 @@
 #include "update.h"
 #include "variable.h"
 
+#include <cmath>
 #include <cstring>
 
 using namespace LAMMPS_NS;
 
-#define EPSDT 1.0e-6
+static constexpr double EPSDT = 1.0e-6;
 /* ---------------------------------------------------------------------- */
 
 Rerun::Rerun(LAMMPS *lmp) : Command(lmp) {}
@@ -138,7 +139,7 @@ void Rerun::command(int narg, char **arg)
   // invoke lmp->init() only once
   // read all relevant snapshots
   // use setup_minimal() since atoms are already owned by correct procs
-  // addstep_compute_all() insures energy/virial computed on every snapshot
+  // addstep_compute_all() ensures energy/virial computed on every snapshot
 
   update->whichflag = 1;
 
@@ -251,7 +252,7 @@ void Rerun::command(int narg, char **arg)
     if (ntimestep < 0) break;
   }
 
-  // insure thermo output on last dump timestep
+  // ensure thermo output on last dump timestep
 
   output->next_thermo = update->ntimestep;
   output->write(update->ntimestep);

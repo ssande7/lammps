@@ -37,9 +37,8 @@ using namespace LAMMPS_NS;
 using namespace MathConst;
 using namespace MathExtra;
 
-#define MAXLINE 1024
-#define DELTA 4
-#define PGDELTA 1
+static constexpr int DELTA = 4;
+static constexpr int PGDELTA = 1;
 
 /* ---------------------------------------------------------------------- */
 
@@ -600,7 +599,7 @@ void PairExTeP::read_file(char *file)
         error->one(FLERR,"Illegal ExTeP parameter");
 
       nparams++;
-      if (nparams >= pow(nelements,3)) break;
+      if (nparams >= pow((double)nelements,3)) break;
     }
 
     /* F_IJ (3) */
@@ -641,7 +640,7 @@ void PairExTeP::read_file(char *file)
         if (!utils::is_integer(kname))
           continue;
 
-        int Ni  = atoi(kname.c_str());
+        int Ni  = std::stoi(kname);
         int Nj  = values.next_int();
         double spline_val = values.next_double();
         double spline_derx = values.next_double();

@@ -18,15 +18,9 @@ class colvarbias_reweightaMD : public colvarbias_histogram {
 public:
   colvarbias_reweightaMD(char const *key);
   virtual ~colvarbias_reweightaMD();
-#if (__cplusplus >= 201103L)
   virtual int init(std::string const &conf) override;
   virtual int update() override;
   virtual int write_output_files() override;
-#else
-  virtual int init(std::string const &conf);
-  virtual int update();
-  virtual int write_output_files();
-#endif
 
   /// @brief convert histogram to PMF by taking logarithm and multiplying
   ///        it with -1/beta
@@ -51,21 +45,21 @@ public:
 
   /// @brief output the PMF by the exponential average estimator
   /// @param[in] p_output_prefix the prefix of the output file
-  /// @param[in] append append the output to a .hist file if true
+  /// @param[in] keep_open Allow writing the history of the PMF
   virtual int write_exponential_reweighted_pmf(
-    const std::string& p_output_prefix, bool append = false);
+    const std::string& p_output_prefix, bool keep_open = false);
 
   /// @brief output the PMF by the cumulant expansion estimator
   /// @param[in] p_output_prefix the prefix of the output file
-  /// @param[in] append append the output to a .hist file if true
+  /// @param[in] keep_open Allow writing the history of the expansion
   virtual int write_cumulant_expansion_pmf(
-    const std::string& p_output_prefix, bool append = false);
+    const std::string& p_output_prefix, bool keep_open = false);
 
   /// @brief output the biased sampling
   /// @param[in] p_output_prefix the prefix of the output file
-  /// @param[in] append append the output to a .hist file if true
+  /// @param[in] keep_open Allow writing the history of the samples
   virtual int write_count(
-    const std::string& p_output_prefix, bool append = false);
+    const std::string& p_output_prefix, bool keep_open = false);
 protected:
   /// Current accelMD factor is the from previous frame
   std::vector<int> previous_bin;
@@ -85,14 +79,15 @@ protected:
   /// Write gradients of the PMF?
   bool b_write_gradients;
 
+  template <typename OST> OST & write_state_data_template_(OST& os);
+  template <typename IST> IST & read_state_data_template_(IST& is);
+
   /// save and restore
-#if (__cplusplus >= 201103L)
   virtual std::istream & read_state_data(std::istream &is) override;
+  virtual cvm::memory_stream & read_state_data(cvm::memory_stream &is) override;
   virtual std::ostream & write_state_data(std::ostream &os) override;
-#else
-  virtual std::istream & read_state_data(std::istream &is);
-  virtual std::ostream & write_state_data(std::ostream &os);
-#endif
+  virtual cvm::memory_stream & write_state_data(cvm::memory_stream &os) override;
+
 private:
   /// temporary grids for evaluating PMFs
   colvar_grid_scalar  *pmf_grid_exp_avg;

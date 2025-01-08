@@ -21,9 +21,9 @@
 
 using namespace LAMMPS_NS;
 
-#define MYHUGE 1.0e30
-#define TINY 1.0e-6
-#define DELTA 16384
+static constexpr double MYHUGE = 1.0e30;
+static constexpr double TINY = 1.0e-6;
+static constexpr int DELTA = 16384;
 
 // prototypes for non-class functions
 
@@ -242,7 +242,7 @@ void RCB::compute(int dimension, int n, double **x, double *wt,
     // dim_select = selected cut dimension
     // valuehalf_select = valuehalf in that dimension
     // dotmark_select = dot markings in that dimension
-    // initialize largest = -1.0 to insure a cut in some dim is accepted
+    // initialize largest = -1.0 to ensure a cut in some dim is accepted
     //   e.g. if current recursed box is size 0 in all dims
 
     int dim_select = -1;
@@ -571,7 +571,7 @@ void RCB::compute(int dimension, int n, double **x, double *wt,
       }
     }
 
-    // handshake before sending dots to insure recvs have been posted
+    // handshake before sending dots to ensure recvs have been posted
 
     if (readnumber > 0) {
       MPI_Send(nullptr,0,MPI_INT,procpartner,0,world);
@@ -1063,7 +1063,7 @@ void RCB::compute_old(int dimension, int n, double **x, double *wt,
       }
     }
 
-    // handshake before sending dots to insure recvs have been posted
+    // handshake before sending dots to ensure recvs have been posted
 
     if (readnumber > 0) {
       MPI_Send(nullptr,0,MPI_INT,procpartner,0,world);

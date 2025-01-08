@@ -44,11 +44,13 @@ endif
 # PACKLIB    = all packages that require an additional lib
 #              should be PACKSYS + PACKINT + PACKEXT
 # PACKSYS    = subset that reqiure a common system library
-#              include MPIIO and LB b/c require full MPI, not just STUBS
+#              include LATBOLTZ b/c it requires a full MPI, not just STUBS
 # PACKINT    = subset that require an internal (provided) library
 # PACKEXT    = subset that require an external (downloaded) library
 
 PACKAGE = \
+	molecule \
+	kspace \
 	adios \
 	amoeba \
 	asphere \
@@ -72,6 +74,7 @@ PACKAGE = \
 	dpd-smooth \
 	drude \
 	eff \
+	extra-command \
 	extra-compute \
 	extra-dump \
 	extra-fix \
@@ -85,9 +88,7 @@ PACKAGE = \
 	interlayer \
 	kim \
 	kokkos \
-	kspace \
 	latboltz \
-	latte \
 	lepton \
 	machdyn \
 	manifold \
@@ -104,11 +105,9 @@ PACKAGE = \
 	ml-quip \
 	ml-rann \
 	ml-snap \
+	ml-uf3 \
 	mofff \
-	molecule \
 	molfile \
-	mpiio \
-	mscg \
 	netcdf \
 	openmp \
 	opt \
@@ -125,6 +124,7 @@ PACKAGE = \
 	reaction \
 	reaxff \
 	replica \
+	rheo \
 	rigid \
 	scafacos \
 	shock \
@@ -146,15 +146,17 @@ PACKAGE = \
 # NOTE: the last four packages must remain at the end since
 # they depend on other packages to be installed first.
 
-PACKBASIC = kspace manybody molecule rigid
+PACKBASIC = molecule kspace manybody rigid
 
 PACKMOST = \
+	kspace \
+	molecule \
 	amoeba \
 	asphere \
 	bocs \
 	body \
 	bpm \
-        brownian \
+	brownian \
 	cg-dna \
 	cg-spica \
 	class2 \
@@ -168,6 +170,7 @@ PACKMOST = \
 	dpd-smooth \
 	drude \
 	eff \
+	extra-command \
 	extra-compute \
 	extra-dump \
 	extra-fix \
@@ -176,14 +179,13 @@ PACKMOST = \
 	fep \
 	granular \
 	interlayer \
-	kspace \
 	manybody \
 	mc \
 	meam \
+	mesont \
 	misc \
 	ml-snap \
 	mofff \
-	molecule \
 	openmp \
 	opt \
 	orient \
@@ -212,10 +214,7 @@ PACKLIB = \
 	gpu \
 	kim \
 	kokkos \
-	latte \
 	lepton \
-	mpiio \
-	mscg \
 	poems \
 	python \
 	voronoi \
@@ -228,7 +227,6 @@ PACKLIB = \
 	latboltz \
 	lepton \
 	mdi \
-	mesont \
 	molfile \
 	netcdf \
 	ml-pace \
@@ -236,29 +234,29 @@ PACKLIB = \
 	plumed \
 	qmmm \
 	ml-quip \
+	rheo \
 	scafacos \
 	machdyn \
 	vtk \
 	electrode
 
-PACKSYS = compress latboltz mpiio python
+PACKSYS = compress latboltz python
 
-PACKINT = atc awpmd colvars electrode gpu kokkos lepton mesont ml-pod poems
+PACKINT = atc awpmd colvars electrode gpu kokkos lepton ml-pod poems
 
 PACKEXT = \
 	adios \
 	h5md \
 	kim \
-	latte \
 	machdyn \
 	ml-hdnnp \
 	ml-pace \
 	ml-quip \
 	molfile \
-	mscg \
 	netcdf \
 	plumed \
 	qmmm \
+	rheo \
 	scafacos \
 	voronoi \
 	vtk \
@@ -468,7 +466,7 @@ mpi-stubs:
 sinclude ../lib/python/Makefile.lammps
 install-python:
 	@rm -rf ../python/build
-	@$(PYTHON) ../python/install.py -p ../python/lammps -l ../src/liblammps.so -w $(PWD)
+	@$(PYTHON) ../python/install.py -p ../python/lammps -l ../src/liblammps.so -w $(PWD) -v $(PWD)/version.h
 
 # Create a tarball of src dir and packages
 
@@ -482,7 +480,7 @@ tar:
 	@cd STUBS; $(MAKE)
 	@echo "Created $(ROOT)_src.tar.gz"
 
-check: check-whitespace check-permissions check-homepage check-errordocs check-version
+check: check-whitespace check-permissions check-homepage check-errordocs check-docs check-version
 
 check-whitespace:
 	$(PYTHON) ../tools/coding_standard/whitespace.py ..
@@ -508,8 +506,12 @@ check-errordocs:
 fix-errordocs:
 	$(PYTHON) ../tools/coding_standard/errordocs.py .. -f
 
+check-docs:
+	$(MAKE) $(MFLAGS) -C ../doc anchor_check style_check package_check role_check
+
 check-version:
-	$(PYTHON) ../tools/coding_standard/versiontags.py ..
+	$(PYTHON) ../tools/coding_standard/versiontags.py .. || echo
+
 
 format-src:
 	clang-format -i --verbose --style=file *.cpp *.h */*.cpp */*.h

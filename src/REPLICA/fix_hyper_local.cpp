@@ -35,11 +35,11 @@
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
-#define DELTABOND 16384
-#define DELTABIAS 16
-#define COEFFINIT 1.0
-#define FCCBONDS 12
-#define BIG 1.0e20
+static constexpr int DELTABOND = 16384;
+static constexpr int DELTABIAS = 16;
+static constexpr double COEFFINIT = 1.0;
+static constexpr int FCCBONDS = 12;
+static constexpr double BIG = 1.0e20;
 
 enum{STRAIN,STRAINDOMAIN,BIASFLAG,BIASCOEFF};
 enum{IGNORE,WARN,ERROR};
@@ -1058,7 +1058,7 @@ void FixHyperLocal::build_bond_list(int natom)
   for (i = 0; i < nlocal; i++) numbond[i] = 0;
 
   // trigger neighbor list builds for both lists
-  // insure the I loops in both are from 1 to nlocal
+  // ensure the I loops in both are from 1 to nlocal
 
   neighbor->build_one(listfull);
   neighbor->build_one(listhalf);

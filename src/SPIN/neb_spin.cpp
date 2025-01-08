@@ -44,6 +44,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <exception>
 
 using namespace LAMMPS_NS;
 
@@ -62,10 +63,11 @@ static const char cite_neb_spin[] =
   "doi={10.1016/j.cpc.2015.07.001}\n"
   "}\n\n";
 
-#define MAXLINE 256
-#define CHUNK 1024
+static constexpr int MAXLINE = 256;
+static constexpr int CHUNK = 1024;
+
 // 8 attributes: tag, spin norm, position (3), spin direction (3)
-#define ATTRIBUTE_PERLINE 8
+static constexpr int ATTRIBUTE_PERLINE = 8;
 
 /* ---------------------------------------------------------------------- */
 
@@ -243,7 +245,7 @@ void NEBSpin::run()
   // perform regular NEBSpin for n1steps or until replicas converge
   // retrieve PE values from fix NEBSpin and print every nevery iterations
   // break out of while loop early if converged
-  // damped dynamic min styles insure all replicas converge together
+  // damped dynamic min styles ensure all replicas converge together
 
   timer->init();
   timer->barrier_start();
@@ -331,7 +333,7 @@ void NEBSpin::run()
   // perform climbing NEBSpin for n2steps or until replicas converge
   // retrieve PE values from fix NEBSpin and print every nevery iterations
   // break induced if converged
-  // damped dynamic min styles insure all replicas converge together
+  // damped dynamic min styles ensure all replicas converge together
 
   timer->init();
   timer->barrier_start();
@@ -374,7 +376,7 @@ void NEBSpin::readfile(char *file, int flag)
   int i,nchunk,eofflag,nlines;
   tagint tag;
   char *eof,*start,*next,*buf;
-  char line[MAXLINE];
+  char line[MAXLINE] = {'\0'};
   double musp,xx,yy,zz,spx,spy,spz;
 
   if (me_universe == 0 && universe->uscreen)

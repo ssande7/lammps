@@ -28,8 +28,8 @@ Timer::Timer(LAMMPS *_lmp) : Pointers(_lmp)
 {
   _level = NORMAL;
   _sync = OFF;
-  _timeout = -1;
-  _s_timeout = -1;
+  _timeout = -1.0;
+  _s_timeout = -1.0;
   _checkfreq = 10;
   _nextcheck = -1;
   this->_stamp(RESET);
@@ -184,7 +184,7 @@ void Timer::print_timeout(FILE *fp)
 bool Timer::_check_timeout()
 {
   double walltime = platform::walltime() - timeout_start;
-  // broadcast time to insure all ranks act the same.
+  // broadcast time to ensure all ranks act the same.
   MPI_Bcast(&walltime, 1, MPI_DOUBLE, 0, world);
 
   if (walltime < _timeout) {
@@ -200,7 +200,10 @@ bool Timer::_check_timeout()
 /* ---------------------------------------------------------------------- */
 double Timer::get_timeout_remain()
 {
-  return (_timeout < 0.0) ? 0.0 : _timeout + timeout_start - platform::walltime();
+  double remain = _timeout + timeout_start - platform::walltime();
+  // never report a negative remaining time.
+  if (remain < 0.0) remain = 0.0;
+  return (_timeout < 0.0) ? 0.0 : remain;
 }
 
 /* ----------------------------------------------------------------------
@@ -248,9 +251,9 @@ void Timer::modify_params(int narg, char **arg)
 
     // format timeout setting
     std::string timeout = "off";
-    if (_timeout >= 0) {
-      std::time_t tv = _timeout;
-      timeout = fmt::format("{:%H:%M:%S}", fmt::gmtime(tv));
+    if (_timeout >= 0.0) {
+      std::tm tv = fmt::gmtime((std::time_t) _timeout);
+      timeout = fmt::format("{:02d}:{:%M:%S}", tv.tm_yday * 24 + tv.tm_hour, tv);
     }
 
     utils::logmesg(lmp, "New timer settings: style={}  mode={}  timeout={}\n", timer_style[_level],

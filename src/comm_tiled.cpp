@@ -36,12 +36,10 @@
 
 using namespace LAMMPS_NS;
 
-#define BUFFACTOR 1.5
-#define BUFFACTOR 1.5
-#define BUFMIN 1024
-#define EPSILON 1.0e-6
-
-#define DELTA_PROCS 16
+static constexpr double BUFFACTOR = 1.5;
+static constexpr int BUFMIN = 1024;
+static constexpr double EPSILON = 1.0e-6;
+static constexpr int DELTA_PROCS = 16;
 
 /* ---------------------------------------------------------------------- */
 
@@ -49,14 +47,9 @@ CommTiled::CommTiled(LAMMPS *lmp) : Comm(lmp)
 {
   style = Comm::TILED;
   layout = Comm::LAYOUT_UNIFORM;
-  pbc_flag = nullptr;
-  buf_send = nullptr;
-  buf_recv = nullptr;
-  overlap = nullptr;
-  rcbinfo = nullptr;
-  cutghostmulti = nullptr;
-  cutghostmultiold = nullptr;
-  init_buffers();
+  init_pointers();
+  init_buffers_flag = 0;
+  maxswap = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -71,7 +64,9 @@ CommTiled::CommTiled(LAMMPS * /*lmp*/, Comm *oldcomm) : Comm(*oldcomm)
   style = Comm::TILED;
   layout = oldcomm->layout;
   Comm::copy_arrays(oldcomm);
-  init_buffers();
+  init_pointers();
+  init_buffers_flag = 0;
+  maxswap = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -88,23 +83,58 @@ CommTiled::~CommTiled()
 }
 
 /* ----------------------------------------------------------------------
+   initialize comm pointers to nullptr
+------------------------------------------------------------------------- */
+
+void CommTiled::init_pointers()
+{
+  buf_send = buf_recv = nullptr;
+  overlap = nullptr;
+  rcbinfo = nullptr;
+  cutghostmulti = nullptr;
+  cutghostmultiold = nullptr;
+
+  nsendproc = nullptr;
+  nrecvproc = nullptr;
+  sendother = nullptr;
+  recvother = nullptr;
+  sendself = nullptr;
+  sendproc = nullptr;
+  recvproc = nullptr;
+  sendnum = nullptr;
+  recvnum = nullptr;
+  size_forward_recv = nullptr;
+  firstrecv = nullptr;
+  size_reverse_send = nullptr;
+  size_reverse_recv = nullptr;
+  forward_recv_offset = nullptr;
+  reverse_recv_offset = nullptr;
+  pbc_flag = nullptr;
+  pbc = nullptr;
+  sendbox = nullptr;
+  sendbox_multi = nullptr;
+  sendbox_multiold = nullptr;
+  maxsendlist = nullptr;
+  sendlist = nullptr;
+  requests = nullptr;
+  nprocmax = nullptr;
+  nexchproc = nullptr;
+  nexchprocmax = nullptr;
+  exchproc = nullptr;
+  exchnum = nullptr;
+}
+
+/* ----------------------------------------------------------------------
    initialize comm buffers and other data structs local to CommTiled
 ------------------------------------------------------------------------- */
 
 void CommTiled::init_buffers()
 {
-  buf_send = buf_recv = nullptr;
   maxsend = maxrecv = BUFMIN;
   grow_send(maxsend,2);
-  memory->create(buf_recv,maxrecv,"comm:buf_recv");
+  grow_recv(maxrecv,1);
 
   maxoverlap = 0;
-  overlap = nullptr;
-  rcbinfo = nullptr;
-  cutghostmulti = nullptr;
-  cutghostmultiold = nullptr;
-  sendbox_multi = nullptr;
-  sendbox_multiold = nullptr;
 
   // Note this may skip growing multi arrays, will call again in init()
   maxswap = 6;
@@ -115,6 +145,11 @@ void CommTiled::init_buffers()
 
 void CommTiled::init()
 {
+  if (!init_buffers_flag) {
+    init_buffers();
+    init_buffers_flag = 1;
+  }
+
   Comm::init();
 
   // cannot set nswap in init_buffers() b/c
@@ -633,7 +668,7 @@ void CommTiled::setup()
 
     // overlap = list of procs that touch my sub-box in idim
     // proc can appear twice in list if touches in both directions
-    // 2nd add-to-list checks to insure each proc appears exactly once
+    // 2nd add-to-list checks to ensure each proc appears exactly once
 
     noverlap = 0;
     iswap = 2*idim;
@@ -904,7 +939,7 @@ void CommTiled::exchange()
   atom->nghost = 0;
   atom->avec->clear_bonus();
 
-  // insure send buf has extra space for a single atom
+  // ensure send buf has extra space for a single atom
   // only need to reset if a fix can dynamically add to size of single atom
 
   if (maxexchange_fix_dynamic) {
@@ -1249,7 +1284,7 @@ void CommTiled::borders()
     }
     rmaxall = MAX(rmaxall,ncountall);
 
-    // insure send/recv buffers are large enough for this border comm swap
+    // ensure send/recv buffers are large enough for this border comm swap
 
     if (smaxone*size_border > maxsend) grow_send(smaxone*size_border,0);
     if (rmaxall*size_border > maxrecv) grow_recv(rmaxall*size_border);
@@ -1329,7 +1364,7 @@ void CommTiled::borders()
   if ((atom->molecular != Atom::ATOMIC) && ((atom->nlocal + atom->nghost) > NEIGHMASK))
     error->one(FLERR,"Per-processor number of atoms is too large for molecular neighbor lists");
 
-  // insure send/recv buffers are long enough for all forward & reverse comm
+  // ensure send/recv buffers are long enough for all forward & reverse comm
   // send buf is for one forward or reverse sends to one proc
   // recv buf is for all forward or reverse recvs in one swap
 
@@ -1605,8 +1640,8 @@ void CommTiled::reverse_comm(Fix *fix, int size)
 
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Fix with variable size data
-   query fix for all pack sizes to insure buf_send is big enough
-   handshake sizes before irregular comm to insure buf_recv is big enough
+   query fix for all pack sizes to ensure buf_send is big enough
+   handshake sizes before irregular comm to ensure buf_recv is big enough
    NOTE: how to setup one big buf recv with correct offsets ??
 ------------------------------------------------------------------------- */
 
@@ -1790,7 +1825,7 @@ void CommTiled::forward_comm_array(int nsize, double **array)
 {
   int i,j,k,m,iatom,last,irecv,nsend,nrecv;
 
-  // insure send/recv bufs are big enough for nsize
+  // ensure send/recv bufs are big enough for nsize
   // based on smaxone/rmaxall from most recent borders() invocation
 
   if (nsize > maxforward) {
@@ -1846,17 +1881,6 @@ void CommTiled::forward_comm_array(int nsize, double **array)
       }
     }
   }
-}
-
-/* ----------------------------------------------------------------------
-   exchange info provided with all 6 stencil neighbors
-   NOTE: this method is currently not used
-------------------------------------------------------------------------- */
-
-int CommTiled::exchange_variable(int n, double * /*inbuf*/, double *& /*outbuf*/)
-{
-  int nrecv = n;
-  return nrecv;
 }
 
 /* ----------------------------------------------------------------------
@@ -2249,12 +2273,15 @@ void CommTiled::grow_send(int n, int flag)
 }
 
 /* ----------------------------------------------------------------------
-   free/malloc the size of the recv buffer as needed with BUFFACTOR
+   free/malloc the size of the recv buffer as needed
+   flag = 0, realloc with BUFFACTOR
+   flag = 1, free/malloc w/out BUFFACTOR
 ------------------------------------------------------------------------- */
 
-void CommTiled::grow_recv(int n)
+void CommTiled::grow_recv(int n, int flag)
 {
-  maxrecv = static_cast<int> (BUFFACTOR * n);
+  if (flag) maxrecv = n;
+  else maxrecv = static_cast<int> (BUFFACTOR * n);
   memory->destroy(buf_recv);
   memory->create(buf_recv,maxrecv,"comm:buf_recv");
 }
@@ -2441,8 +2468,10 @@ void CommTiled::deallocate_swap(int n)
 
     delete [] maxsendlist[i];
 
-    for (int j = 0; j < nprocmax[i]; j++) memory->destroy(sendlist[i][j]);
-    delete [] sendlist[i];
+    if (sendlist && sendlist[i]) {
+      for (int j = 0; j < nprocmax[i]; j++) memory->destroy(sendlist[i][j]);
+      delete [] sendlist[i];
+    }
   }
 
   delete [] sendproc;

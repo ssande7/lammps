@@ -45,6 +45,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <exception>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -52,28 +53,28 @@ using namespace MathConst;
 
 // large energy value used to signal overlap
 
-#define MAXENERGYSIGNAL 1.0e100
+static constexpr double MAXENERGYSIGNAL = 1.0e100;
 
 // this must be lower than MAXENERGYSIGNAL
 // by a large amount, so that it is still
 // less than total energy when negative
 // energy contributions are added to MAXENERGYSIGNAL
 
-#define MAXENERGYTEST 1.0e50
+static constexpr double MAXENERGYTEST = 1.0e50;
 
-enum{EXCHATOM,EXCHMOL}; // exchmode
-enum{NONE,MOVEATOM,MOVEMOL}; // movemode
+enum { EXCHATOM, EXCHMOL };          // exchmode
+enum { NONE, MOVEATOM, MOVEMOL };    // movemode
 
 /* ---------------------------------------------------------------------- */
 
 FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg),
-  region(nullptr), idregion(nullptr), full_flag(false), groupstrings(nullptr),
-  grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
-  molcoords(nullptr), molq(nullptr), molimage(nullptr), random_equal(nullptr), random_unequal(nullptr),
-  fixrigid(nullptr), fixshake(nullptr), idrigid(nullptr), idshake(nullptr)
+    Fix(lmp, narg, arg), region(nullptr), idregion(nullptr), full_flag(false),
+    groupstrings(nullptr), grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr),
+    local_gas_list(nullptr), molcoords(nullptr), molq(nullptr), molimage(nullptr),
+    random_equal(nullptr), random_unequal(nullptr), fixrigid(nullptr), fixshake(nullptr),
+    idrigid(nullptr), idshake(nullptr)
 {
-  if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
+  if (narg < 11) utils::missing_cmd_args(FLERR, "fix gcmc", error);
 
   if (atom->molecular == Atom::TEMPLATE)
     error->all(FLERR,"Fix gcmc does not (yet) work with atom_style template");
@@ -89,25 +90,26 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
 
   ngroups = 0;
   ngrouptypes = 0;
+  triclinic = domain->triclinic;
 
   // required args
 
-  nevery = utils::inumeric(FLERR,arg[3],false,lmp);
-  nexchanges = utils::inumeric(FLERR,arg[4],false,lmp);
-  nmcmoves = utils::inumeric(FLERR,arg[5],false,lmp);
-  ngcmc_type = utils::inumeric(FLERR,arg[6],false,lmp);
-  seed = utils::inumeric(FLERR,arg[7],false,lmp);
-  reservoir_temperature = utils::numeric(FLERR,arg[8],false,lmp);
-  chemical_potential = utils::numeric(FLERR,arg[9],false,lmp);
-  displace = utils::numeric(FLERR,arg[10],false,lmp);
+  nevery = utils::inumeric(FLERR, arg[3], false, lmp);
+  nexchanges = utils::inumeric(FLERR, arg[4], false, lmp);
+  nmcmoves = utils::inumeric(FLERR, arg[5], false, lmp);
+  ngcmc_type = utils::expand_type_int(FLERR, arg[6], Atom::ATOM, lmp);
+  seed = utils::inumeric(FLERR, arg[7], false, lmp);
+  reservoir_temperature = utils::numeric(FLERR, arg[8], false, lmp);
+  chemical_potential = utils::numeric(FLERR, arg[9], false, lmp);
+  displace = utils::numeric(FLERR, arg[10], false, lmp);
 
-  if (nevery <= 0) error->all(FLERR,"Illegal fix gcmc command");
-  if (nexchanges < 0) error->all(FLERR,"Illegal fix gcmc command");
-  if (nmcmoves < 0) error->all(FLERR,"Illegal fix gcmc command");
-  if (seed <= 0) error->all(FLERR,"Illegal fix gcmc command");
+  if (nevery <= 0) error->all(FLERR, "Illegal fix gcmc command");
+  if (nexchanges < 0) error->all(FLERR, "Illegal fix gcmc command");
+  if (nmcmoves < 0) error->all(FLERR, "Illegal fix gcmc command");
+  if (seed <= 0) error->all(FLERR, "Illegal fix gcmc command");
   if (reservoir_temperature < 0.0)
-    error->all(FLERR,"Illegal fix gcmc command");
-  if (displace < 0.0) error->all(FLERR,"Illegal fix gcmc command");
+    error->all(FLERR, "Illegal fix gcmc command");
+  if (displace < 0.0) error->all(FLERR, "Illegal fix gcmc command");
 
   // read options from end of input line
 
@@ -123,8 +125,7 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
 
   // error checks on region and its extent being inside simulation box
 
-  region_xlo = region_xhi = region_ylo = region_yhi =
-    region_zlo = region_zhi = 0.0;
+  region_xlo = region_xhi = region_ylo = region_yhi = region_zlo = region_zhi = 0.0;
   if (region) {
     if (region->bboxflag == 0)
       error->all(FLERR,"Fix gcmc region does not support a bounding box");
@@ -137,11 +138,6 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
     region_yhi = region->extent_yhi;
     region_zlo = region->extent_zlo;
     region_zhi = region->extent_zhi;
-
-    if (region_xlo < domain->boxlo[0] || region_xhi > domain->boxhi[0] ||
-        region_ylo < domain->boxlo[1] || region_yhi > domain->boxhi[1] ||
-        region_zlo < domain->boxlo[2] || region_zhi > domain->boxhi[2])
-      error->all(FLERR,"Fix gcmc region extends outside simulation box");
 
     // estimate region volume using MC trials
 
@@ -212,6 +208,8 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
   next_reneighbor = update->ntimestep + 1;
 
   // zero out counters
+
+  mc_active = 0;
 
   ntranslation_attempts = 0.0;
   ntranslation_successes = 0.0;
@@ -301,8 +299,7 @@ void FixGCMC::options(int narg, char **arg)
     } else if (strcmp(arg[iarg],"region") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
       region = domain->get_region_by_id(arg[iarg+1]);
-      if (!region)
-        error->all(FLERR,"Region {} for fix gcmc does not exist",arg[iarg+1]);
+      if (!region) error->all(FLERR,"Region {} for fix gcmc does not exist",arg[iarg+1]);
       idregion = utils::strdup(arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"maxangle") == 0) {
@@ -362,7 +359,7 @@ void FixGCMC::options(int narg, char **arg)
                            ngrouptypesmax*sizeof(char *),
                            "fix_gcmc:grouptypestrings");
       }
-      grouptypes[ngrouptypes] = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      grouptypes[ngrouptypes] = utils::expand_type_int(FLERR, arg[iarg+1], Atom::ATOM, lmp);
       grouptypestrings[ngrouptypes] = utils::strdup(arg[iarg+2]);
       ngrouptypes++;
       iarg += 3;
@@ -421,11 +418,37 @@ FixGCMC::~FixGCMC()
       delete[] grouptypestrings[igroup];
     memory->sfree(grouptypestrings);
   }
-  if (full_flag && group) {
+
+  // delete exclusion group created in init()
+  // delete molecule group created in init()
+  // unset neighbor exclusion settings made in init()
+  // not necessary if group and neighbor classes already destroyed
+  //   when LAMMPS exits
+
+  if (exclusion_group_bit && group) {
+    auto group_id = std::string("FixGCMC:gcmc_exclusion_group:") + id;
+    try {
+      group->assign(group_id + " delete");
+    } catch (std::exception &e) {
+      if (comm->me == 0)
+        fprintf(stderr, "Error deleting group %s: %s\n", group_id.c_str(), e.what());
+    }
+  }
+
+  if (molecule_group_bit && group) {
+    auto group_id = std::string("FixGCMC:rotation_gas_atoms:") + id;
+    try {
+      group->assign(group_id + " delete");
+    } catch (std::exception &e) {
+      if (comm->me == 0)
+        fprintf(stderr, "Error deleting group %s: %s\n", group_id.c_str(), e.what());
+    }
+  }
+
+  if (full_flag && group && neighbor) {
     int igroupall = group->find("all");
     neighbor->exclusion_group_group_delete(exclusion_group,igroupall);
   }
-
 }
 
 /* ---------------------------------------------------------------------- */
@@ -441,6 +464,11 @@ int FixGCMC::setmask()
 
 void FixGCMC::init()
 {
+  if (!atom->mass) error->all(FLERR, "Fix gcmc requires per atom type masses");
+  if (atom->rmass_flag && (comm->me == 0))
+    error->warning(FLERR, "Fix gcmc will use per atom type masses for velocity initialization");
+
+  triclinic = domain->triclinic;
 
   // set index and check validity of region
 
@@ -449,7 +477,32 @@ void FixGCMC::init()
     if (!region) error->all(FLERR, "Region {} for fix gcmc does not exist", idregion);
   }
 
-  triclinic = domain->triclinic;
+  if (region) {
+    if (region->bboxflag == 0)
+      error->all(FLERR,"Fix gcmc region does not support a bounding box");
+    if (region->dynamic_check())
+      error->all(FLERR,"Fix gcmc region cannot be dynamic");
+
+    region_xlo = region->extent_xlo;
+    region_xhi = region->extent_xhi;
+    region_ylo = region->extent_ylo;
+    region_yhi = region->extent_yhi;
+    region_zlo = region->extent_zlo;
+    region_zhi = region->extent_zhi;
+
+    if (triclinic) {
+      if ((region_xlo < domain->boxlo_bound[0]) || (region_xhi > domain->boxhi_bound[0]) ||
+          (region_ylo < domain->boxlo_bound[1]) || (region_yhi > domain->boxhi_bound[1]) ||
+          (region_zlo < domain->boxlo_bound[2]) || (region_zhi > domain->boxhi_bound[2])) {
+        error->all(FLERR,"Fix gcmc region extends outside simulation box");
+      }
+    } else {
+      if ((region_xlo < domain->boxlo[0]) || (region_xhi > domain->boxhi[0]) ||
+          (region_ylo < domain->boxlo[1]) || (region_yhi > domain->boxhi[1]) ||
+          (region_zlo < domain->boxlo[2]) || (region_zhi > domain->boxhi[2]))
+        error->all(FLERR,"Fix gcmc region extends outside simulation box");
+    }
+  }
 
   // set probabilities for MC moves
 
@@ -511,7 +564,7 @@ void FixGCMC::init()
         if (molecule[i]) flag = 1;
     int flagall;
     MPI_Allreduce(&flag,&flagall,1,MPI_INT,MPI_SUM,world);
-    if (flagall && comm->me == 0)
+    if (flagall)
       error->all(FLERR, "Fix gcmc cannot exchange individual atoms belonging to a molecule");
   }
 
@@ -526,7 +579,7 @@ void FixGCMC::init()
         if (molecule[i] == 0) flag = 1;
     int flagall;
     MPI_Allreduce(&flag,&flagall,1,MPI_INT,MPI_SUM,world);
-    if (flagall && comm->me == 0)
+    if (flagall)
       error->all(FLERR, "All mol IDs should be set for fix gcmc group atoms");
   }
 
@@ -540,9 +593,8 @@ void FixGCMC::init()
 
   fixrigid = nullptr;
   if (rigidflag) {
-    int ifix = modify->find_fix(idrigid);
-    if (ifix < 0) error->all(FLERR,"Fix gcmc rigid fix does not exist");
-    fixrigid = modify->fix[ifix];
+    fixrigid = modify->get_fix_by_id(idrigid);
+    if (!fixrigid) error->all(FLERR,"Fix gcmc rigid fix ID {} does not exist", idrigid);
     int tmp;
     if (&onemols[imol] != (Molecule **) fixrigid->extract("onemol",tmp))
       error->all(FLERR, "Fix gcmc and fix rigid/small not using same molecule template ID");
@@ -553,13 +605,11 @@ void FixGCMC::init()
 
   fixshake = nullptr;
   if (shakeflag) {
-    int ifix = modify->find_fix(idshake);
-    if (ifix < 0) error->all(FLERR,"Fix gcmc shake fix does not exist");
-    fixshake = modify->fix[ifix];
+    fixshake = modify->get_fix_by_id(idshake);
+    if (!fixshake) error->all(FLERR,"Fix gcmc shake fix ID {} does not exist", idshake);
     int tmp;
     if (&onemols[imol] != (Molecule **) fixshake->extract("onemol",tmp))
-      error->all(FLERR,"Fix gcmc and fix shake not using "
-                 "same molecule template ID");
+      error->all(FLERR,"Fix gcmc and fix shake not using same molecule template ID");
   }
 
   if (domain->dimension == 2)
@@ -711,6 +761,8 @@ void FixGCMC::pre_exchange()
 
   if (next_reneighbor != update->ntimestep) return;
 
+  mc_active = 1;
+
   xlo = domain->boxlo[0];
   xhi = domain->boxhi[0];
   ylo = domain->boxlo[1];
@@ -788,7 +840,10 @@ void FixGCMC::pre_exchange()
       }
     }
   }
+
   next_reneighbor = update->ntimestep + nevery;
+
+  mc_active = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -2178,7 +2233,8 @@ void FixGCMC::attempt_molecule_insertion_full()
 }
 
 /* ----------------------------------------------------------------------
-   compute particle's interaction energy with the rest of the system
+   compute particle's interaction energy with the rest of the system by
+   looping over all atoms in the sub-domain including ghosts.
 ------------------------------------------------------------------------- */
 
 double FixGCMC::energy(int i, int itype, tagint imolecule, double *coord)
@@ -2291,8 +2347,7 @@ double FixGCMC::energy_full()
       }
       if (overlaptest) break;
     }
-    MPI_Allreduce(&overlaptest, &overlaptestall, 1,
-                  MPI_INT, MPI_MAX, world);
+    MPI_Allreduce(&overlaptest, &overlaptestall, 1, MPI_INT, MPI_MAX, world);
     if (overlaptestall) return MAXENERGYSIGNAL;
   }
 
@@ -2315,12 +2370,6 @@ double FixGCMC::energy_full()
 
   if (force->kspace) force->kspace->compute(eflag,vflag);
 
-  // unlike Verlet, not performing a reverse_comm() or forces here
-  // b/c GCMC does not care about forces
-  // don't think it will mess up energy due to any post_force() fixes
-  // but Modify::pre_reverse() is needed for INTEL
-
-  if (modify->n_pre_reverse) modify->pre_reverse(eflag,vflag);
   if (modify->n_post_force_any) modify->post_force(vflag);
 
   // NOTE: all fixes with energy_global_flag set and which
@@ -2576,11 +2625,18 @@ void FixGCMC::grow_molecule_arrays(int nmolatoms) {
 
 
 /* ----------------------------------------------------------------------
+   extract variable which stores whether MC is active or not
+     active = MC moves are taking place
+     not active = normal MD is taking place
    extract variable which stores index of exclusion group
 ------------------------------------------------------------------------- */
 
 void *FixGCMC::extract(const char *name, int &dim)
 {
+  if (strcmp(name,"mc_active") == 0) {
+    dim = 0;
+    return (void *) &mc_active;
+  }
   if (strcmp(name,"exclusion_group") == 0) {
     dim = 0;
     return (void *) &exclusion_group;

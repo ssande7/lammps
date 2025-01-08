@@ -25,7 +25,6 @@
 #include "math_const.h"
 #include "math_extra.h"
 #include "memory.h"
-#include "neigh_list.h"
 #include "neighbor.h"
 #include "update.h"
 
@@ -35,11 +34,11 @@ using namespace LAMMPS_NS;
 using namespace MathExtra;
 using MathConst::MY_PI;
 
-#define SELF_CUTOFF 3
-#define RHOMIN 10.0
+static constexpr int SELF_CUTOFF = 3;
+static constexpr double RHOMIN = 10.0;
 
-#define QUAD_FINF 129
-#define QUAD_FSEMI 10
+static constexpr int QUAD_FINF = 129;
+static constexpr int QUAD_FSEMI = 10;
 
 /* ---------------------------------------------------------------------- */
 
@@ -485,7 +484,7 @@ void PairMesoCNTViscous::compute(int eflag, int vflag)
           geometry(r1, r2, p1, p2, nullptr, p, m, param, basis);
 
           if (param[0] > cutoff) continue;
-          if (!(param[2] < 0 && param[3] > 0)) {
+          if (param[2] >= 0 || param[3] <= 0) {
             double salpha = sin(param[1]);
             double sxi1 = salpha * param[2];
             double sxi2 = salpha * param[3];
@@ -508,7 +507,7 @@ void PairMesoCNTViscous::compute(int eflag, int vflag)
             geometry(r1, r2, p2, p1, qe, p, m, param, basis);
 
           if (param[0] > cutoff) continue;
-          if (!(param[2] < 0 && param[3] > 0)) {
+          if (param[2] >= 0 || param[3] <= 0) {
             double hsq = param[0] * param[0];
             double calpha = cos(param[1]);
             double etamin = calpha * param[2];

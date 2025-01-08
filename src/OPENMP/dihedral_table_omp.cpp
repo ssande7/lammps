@@ -34,9 +34,6 @@ using namespace LAMMPS_NS;
 using namespace MathConst;
 using namespace MathExtra;
 
-#define TOLERANCE 0.05
-#define SMALL     0.001
-
 // --------------------------------------------
 // ------- Calculate the dihedral angle -------
 // --------------------------------------------
@@ -90,7 +87,7 @@ static double Phi(double const *x1, //array holding x,y,z coords atom 1
 
   if (dot3(n123, vb34) > 0.0) {
     phi = -phi;   //(Note: Negative dihedral angles are possible only in 3-D.)
-    phi += MY_2PI; //<- This insure phi is always in the range 0 to 2*PI
+    phi += MY_2PI; //<- This ensure phi is always in the range 0 to 2*PI
   }
   return phi;
 } // DihedralTable::Phi()

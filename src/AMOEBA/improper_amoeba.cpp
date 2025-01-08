@@ -28,14 +28,15 @@
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
-#define TOLERANCE 0.05
-#define SMALL     0.001
-
 /* ---------------------------------------------------------------------- */
 
 ImproperAmoeba::ImproperAmoeba(LAMMPS *lmp) : Improper(lmp)
 {
   writedata = 1;
+
+  // the second atom in the quadruplet is the atom of symmetry
+
+  symmatoms[1] = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -285,8 +286,9 @@ void ImproperAmoeba::init_style()
   // check if PairAmoeba disabled improper terms
 
   Pair *pair = nullptr;
-  pair = force->pair_match("amoeba",1,0);
-  if (!pair) pair = force->pair_match("hippo",1,0);
+  pair = force->pair_match("^amoeba",0,0);
+  if (!pair) pair = force->pair_match("^hippo",0,0);
+
   if (!pair) error->all(FLERR,"Improper amoeba could not find pair amoeba/hippo");
 
   int tmp;

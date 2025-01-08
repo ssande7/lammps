@@ -41,10 +41,11 @@
 /** Data type constants for extracting data from atoms, computes and fixes
  *
  * Must be kept in sync with the equivalent constants in ``python/lammps/constants.py``,
- * ``fortran/lammps.f90``, ``tools/swig/lammps.i``, and
+ * ``fortran/lammps.f90``, ``tools/swig/lammps.i``, ``src/lmptype.h``, and
  *``examples/COUPLE/plugin/liblammpsplugin.h`` */
 
 enum _LMP_DATATYPE_CONST {
+  LAMMPS_NONE = -1,     /*!< no data type assigned (yet) */
   LAMMPS_INT = 0,       /*!< 32-bit integer (array) */
   LAMMPS_INT_2D = 1,    /*!< two-dimensional 32-bit integer array */
   LAMMPS_DOUBLE = 2,    /*!< 64-bit double (array) */
@@ -148,6 +149,7 @@ void lammps_commands_string(void *handle, const char *str);
 
 double lammps_get_natoms(void *handle);
 double lammps_get_thermo(void *handle, const char *keyword);
+void *lammps_last_thermo(void *handle, const char *what, int index);
 
 void lammps_extract_box(void *handle, double *boxlo, double *boxhi, double *xy, double *yz,
                         double *xz, int *pflags, int *boxflag);
@@ -160,6 +162,11 @@ int lammps_extract_setting(void *handle, const char *keyword);
 int lammps_extract_global_datatype(void *handle, const char *name);
 void *lammps_extract_global(void *handle, const char *name);
 
+int lammps_extract_pair_dimension(void *handle, const char *name);
+void *lammps_extract_pair(void *handle, const char *name);
+
+int lammps_map_atom(void *handle, const void *id);
+
 /* ----------------------------------------------------------------------
  * Library functions to read or modify per-atom data in LAMMPS
  * ---------------------------------------------------------------------- */
@@ -171,11 +178,14 @@ void *lammps_extract_atom(void *handle, const char *name);
  * Library functions to access data from computes, fixes, variables in LAMMPS
  * ---------------------------------------------------------------------- */
 
-void *lammps_extract_compute(void *handle, const char *, int, int);
-void *lammps_extract_fix(void *handle, const char *, int, int, int, int);
-void *lammps_extract_variable(void *handle, const char *, const char *);
+void *lammps_extract_compute(void *handle, const char *id, int style, int type);
+void *lammps_extract_fix(void *handle, const char *id, int style, int type, int nrow, int ncol);
+void *lammps_extract_variable(void *handle, const char *name, const char *group);
 int lammps_extract_variable_datatype(void *handle, const char *name);
-int lammps_set_variable(void *, char *, char *);
+int lammps_set_variable(void *handle, const char *name, const char *str);
+int lammps_set_string_variable(void *handle, const char *name, const char *str);
+int lammps_set_internal_variable(void *handle, const char *name, double value);
+int lammps_variable_info(void *handle, int idx, char *buf, int bufsize);
 
 /* ----------------------------------------------------------------------
  * Library functions for scatter/gather operations of data
@@ -190,14 +200,17 @@ void lammps_scatter_atoms_subset(void *handle, const char *name, int type, int c
                                  int *ids, void *data);
 
 void lammps_gather_bonds(void *handle, void *data);
+void lammps_gather_angles(void *handle, void *data);
+void lammps_gather_dihedrals(void *handle, void *data);
+void lammps_gather_impropers(void *handle, void *data);
 
 void lammps_gather(void *handle, const char *name, int type, int count, void *data);
 void lammps_gather_concat(void *handle, const char *name, int type, int count, void *data);
-void lammps_gather_subset(void *handle, const char *name, int type, int count, int ndata,
-                          int *ids, void *data);
+void lammps_gather_subset(void *handle, const char *name, int type, int count, int ndata, int *ids,
+                          void *data);
 void lammps_scatter(void *handle, const char *name, int type, int count, void *data);
-void lammps_scatter_subset(void *handle, const char *name, int type, int count, int ndata,
-                           int *ids, void *data);
+void lammps_scatter_subset(void *handle, const char *name, int type, int count, int ndata, int *ids,
+                           void *data);
 
 #if !defined(LAMMPS_BIGBIG)
 int lammps_create_atoms(void *handle, int n, const int *id, const int *type, const double *x,
@@ -230,6 +243,7 @@ int lammps_config_has_gzip_support();
 int lammps_config_has_png_support();
 int lammps_config_has_jpeg_support();
 int lammps_config_has_ffmpeg_support();
+int lammps_config_has_curl_support();
 int lammps_config_has_exceptions();
 
 int lammps_config_has_package(const char *);

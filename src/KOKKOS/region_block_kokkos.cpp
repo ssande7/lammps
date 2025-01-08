@@ -18,12 +18,11 @@
 
 using namespace LAMMPS_NS;
 
-#define BIG 1.0e20
-
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-RegBlockKokkos<DeviceType>::RegBlockKokkos(LAMMPS *lmp, int narg, char **arg) : RegBlock(lmp, narg, arg)
+RegBlockKokkos<DeviceType>::RegBlockKokkos(LAMMPS *lmp, int narg, char **arg)
+  : RegBlock(lmp, narg, arg)
 {
   atomKK = (AtomKokkos*) atom;
 }
@@ -48,7 +47,8 @@ void RegBlockKokkos<DeviceType>::match_all_kokkos(int groupbit_in, DAT::tdual_in
   groupbit = groupbit_in;
   d_match = k_match_in.template view<DeviceType>();
 
-  atomKK->sync(Device, X_MASK | MASK_MASK);
+  auto execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
+  atomKK->sync(execution_space, X_MASK | MASK_MASK);
 
   x = atomKK->k_x.view<DeviceType>();
   mask = atomKK->k_mask.view<DeviceType>();

@@ -29,8 +29,7 @@
 
 using namespace LAMMPS_NS;
 
-#define MAXLINE 1024
-#define MAXWORD 3
+static constexpr int MAXLINE = 1024;
 
 /* ---------------------------------------------------------------------- */
 
@@ -126,7 +125,7 @@ void PairSNAP::compute(int eflag, int vflag)
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     snaptr->grow_rij(jnum);
 
@@ -299,7 +298,7 @@ void PairSNAP::compute_bispectrum()
     jlist = list->firstneigh[i];
     jnum = list->numneigh[i];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     snaptr->grow_rij(jnum);
 
@@ -399,7 +398,7 @@ void PairSNAP::coeff(int narg, char **arg)
     // ncoeffall should be (ncoeff+2)*(ncoeff+1)/2
     // so, ncoeff = floor(sqrt(2*ncoeffall))-1
 
-    ncoeff = sqrt(2*ncoeffall)-1;
+    ncoeff = sqrt(2.0*ncoeffall)-1;
     ncoeffq = (ncoeff*(ncoeff+1))/2;
     int ntmp = 1+ncoeff+ncoeffq;
     if (ntmp != ncoeffall) {
@@ -475,7 +474,8 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
                                    coefffilename, utils::getsyserror());
   }
 
-  char line[MAXLINE],*ptr;
+  char line[MAXLINE] = {'\0'};
+  char *ptr;
   int eof = 0;
   int nwords = 0;
   while (nwords == 0) {
@@ -795,6 +795,8 @@ double PairSNAP::memory_usage()
 
   return bytes;
 }
+
+/* ---------------------------------------------------------------------- */
 
 void *PairSNAP::extract(const char *str, int &dim)
 {

@@ -30,6 +30,7 @@ Improper::Improper(LAMMPS *_lmp) : Pointers(_lmp)
 {
   energy = 0.0;
   writedata = 0;
+  for (int i = 0; i < 4; i++) symmatoms[i] = 0;
 
   allocated = 0;
   suffix_flag = Suffix::NONE;
@@ -46,7 +47,7 @@ Improper::Improper(LAMMPS *_lmp) : Pointers(_lmp)
   datamask_read = ALL_MASK;
   datamask_modify = ALL_MASK;
 
-  copymode = 0;
+  copymode = kokkosable = 0;
 }
 
 /* ---------------------------------------------------------------------- */

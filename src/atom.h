@@ -83,6 +83,7 @@ class Atom : protected Pointers {
   double **omega, **angmom, **torque;
   int *ellipsoid, *line, *tri, *body;
   double **quat;
+  double *temperature, *heatflow;
 
   // molecular systems
 
@@ -145,12 +146,6 @@ class Atom : protected Pointers {
   double *edpd_cv;    // heat capacity
   int cc_species;
 
-  // MESONT package
-
-  double *length;
-  int *buckling;
-  tagint **bond_nt;
-
   // MACHDYN package
 
   double *contact_radius;
@@ -159,6 +154,13 @@ class Atom : protected Pointers {
   double *eff_plastic_strain;
   double *eff_plastic_strain_rate;
   double *damage;
+
+  // RHEO package
+
+  int *rheo_status;
+  double *conductivity;
+  double *pressure;
+  double *viscosity;
 
   // SPH package
 
@@ -185,15 +187,17 @@ class Atom : protected Pointers {
   // 1 if variable is used, 0 if not
 
   int labelmapflag, types_style;
-  int sphere_flag, ellipsoid_flag, line_flag, tri_flag, body_flag;
+  int ellipsoid_flag, line_flag, tri_flag, body_flag;
   int peri_flag, electron_flag;
   int wavepacket_flag, sph_flag;
 
   int molecule_flag, molindex_flag, molatom_flag;
   int q_flag, mu_flag;
   int rmass_flag, radius_flag, omega_flag, torque_flag, angmom_flag, quat_flag;
+  int temperature_flag, heatflow_flag;
   int vfrac_flag, spin_flag, eradius_flag, ervel_flag, erforce_flag;
   int cs_flag, csforce_flag, vforce_flag, ervelforce_flag, etag_flag;
+  int rheo_status_flag, conductivity_flag, pressure_flag, viscosity_flag;
   int rho_flag, esph_flag, cv_flag, vest_flag;
   int dpd_flag, edpd_flag, tdpd_flag;
   int mesont_flag;
@@ -246,6 +250,7 @@ class Atom : protected Pointers {
   int *icols, *dcols;
   char **ivname, **dvname, **ianame, **daname;
   int nivector, ndvector, niarray, ndarray;
+  int *ivghost, *dvghost, *iaghost, *daghost;
 
   // molecule templates
   // each template can be a set of consecutive molecules
@@ -316,7 +321,7 @@ class Atom : protected Pointers {
   void create_avec(const std::string &, int, char **, int);
   virtual AtomVec *new_avec(const std::string &, int, int &);
 
-  void init();
+  virtual void init();
   void setup();
 
   std::string get_style();
@@ -330,9 +335,9 @@ class Atom : protected Pointers {
 
   int parse_data(const char *);
 
-  void deallocate_topology();
+  virtual void deallocate_topology();
 
-  void data_atoms(int, char *, tagint, tagint, int, int, double *, int, int *);
+  void data_atoms(int, char *, tagint, tagint, int, int, double *, int, int *, int);
   void data_vels(int, char *, tagint);
   void data_bonds(int, char *, int *, tagint, int, int, int *);
   void data_angles(int, char *, int *, tagint, int, int, int *);
@@ -367,10 +372,9 @@ class Atom : protected Pointers {
   void update_callback(int);
 
   int find_custom(const char *, int &, int &);
-  virtual int add_custom(const char *, int, int);
+  int find_custom_ghost(const char *, int &, int &, int &);
+  virtual int add_custom(const char *, int, int, int ghost = 0);
   virtual void remove_custom(int, int, int);
-
-  virtual void sync_modify(ExecutionSpace, unsigned int, unsigned int) {}
 
   void *extract(const char *);
   int extract_datatype(const char *);
@@ -389,7 +393,7 @@ class Atom : protected Pointers {
   // map lookup function inlined for efficiency
   // return -1 if no map defined
 
-  inline int map(tagint global)
+  virtual inline int map(tagint global)
   {
     if (map_style == 1)
       return map_array[global];
@@ -402,10 +406,10 @@ class Atom : protected Pointers {
   virtual void map_init(int check = 1);
   virtual void map_clear();
   virtual void map_set();
-  void map_one(tagint, int);
+  virtual void map_one(tagint, int);
   int map_style_set();
   virtual void map_delete();
-  int map_find_hash(tagint);
+  virtual int map_find_hash(tagint);
 
  protected:
   // global to local ID mapping

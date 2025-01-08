@@ -1,4 +1,3 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    https://www.lammps.org/, Sandia National Laboratories
@@ -27,21 +26,25 @@
 #include "force.h"
 #include "kspace.h"
 #include "math_const.h"
+#include "math_special.h"
 #include "memory.h"
 #include "neighbor.h"
 #include "suffix.h"
 #include "update.h"
 
-#include <cfloat>    // IWYU pragma: keep
-#include <climits>   // IWYU pragma: keep
+#include <cfloat>     // IWYU pragma: keep
+#include <climits>    // IWYU pragma: keep
 #include <cmath>
 #include <cstring>
 
 using namespace LAMMPS_NS;
-using namespace MathConst;
+using MathConst::MY_ISPI4;
+using MathConst::THIRD;
+using MathSpecial::powint;
 
-enum{NONE,RLINEAR,RSQ,BMP};
-static const std::string mixing_rule_names[Pair::SIXTHPOWER+1] = {"geometric", "arithmetic", "sixthpower" };
+enum { NONE, RLINEAR, RSQ, BMP };
+static const std::string mixing_rule_names[Pair::SIXTHPOWER + 1] = {"geometric", "arithmetic",
+                                                                    "sixthpower"};
 
 // allocate space for static class instance variable and initialize it
 
@@ -49,7 +52,16 @@ int Pair::instance_total = 0;
 
 /* ---------------------------------------------------------------------- */
 
-Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
+Pair::Pair(LAMMPS *lmp) :
+    Pointers(lmp), virial{0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, eatom(nullptr), vatom(nullptr),
+    cvatom(nullptr), cutsq(nullptr), setflag(nullptr), cutghost(nullptr), rtable(nullptr),
+    drtable(nullptr), ftable(nullptr), dftable(nullptr), ctable(nullptr), dctable(nullptr),
+    etable(nullptr), detable(nullptr), ptable(nullptr), dptable(nullptr), vtable(nullptr),
+    dvtable(nullptr), rdisptable(nullptr), drdisptable(nullptr), fdisptable(nullptr),
+    dfdisptable(nullptr), edisptable(nullptr), dedisptable(nullptr), pvector(nullptr),
+    svector(nullptr), list(nullptr), listhalf(nullptr), listfull(nullptr),
+    list_tally_compute(nullptr), elements(nullptr), elem1param(nullptr), elem2param(nullptr),
+    elem3param(nullptr), map(nullptr)
 {
   instance_me = instance_total++;
 
@@ -71,12 +83,7 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
   did_mix = false;
 
   nextra = 0;
-  pvector = nullptr;
   single_extra = 0;
-  svector = nullptr;
-
-  setflag = nullptr;
-  cutsq = nullptr;
 
   ewaldflag = pppmflag = msmflag = dispersionflag = tip4pflag = dipoleflag = spinflag = 0;
   reinitflag = 1;
@@ -95,40 +102,29 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
   ndisptablebits = 12;
   tabinner = sqrt(2.0);
   tabinner_disp = sqrt(2.0);
-  ftable = nullptr;
-  fdisptable = nullptr;
   trim_flag = 1;
 
   allocated = 0;
   suffix_flag = Suffix::NONE;
 
   maxeatom = maxvatom = maxcvatom = 0;
-  eatom = nullptr;
-  vatom = nullptr;
-  cvatom = nullptr;
 
   num_tally_compute = 0;
-  list_tally_compute = nullptr;
+  did_tally_flag = 0;
 
   nelements = nparams = maxparam = 0;
-  elements = nullptr;
-  elem1param = nullptr;
-  elem2param = nullptr;
-  elem3param = nullptr;
-  map = nullptr;
 
   nondefault_history_transfer = 0;
   beyond_contact = 0;
 
-  // KOKKOS per-fix data masks
+  // KOKKOS package
 
   execution_space = Host;
   datamask_read = ALL_MASK;
   datamask_modify = ALL_MASK;
 
-  kokkosable = 0;
-  reverse_comm_device = 0;
-  copymode = 0;
+  kokkosable = copymode = 0;
+  reverse_comm_device = fuse_force_clear_flag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -150,6 +146,8 @@ Pair::~Pair()
   memory->destroy(vatom);
   memory->destroy(cvatom);
 }
+
+// clang-format off
 
 /* ----------------------------------------------------------------------
    modify parameters of the pair style
@@ -298,6 +296,9 @@ void Pair::init()
       utils::logmesg(lmp,"Generated {} of {} mixed pair_coeff terms from {} mixing rule\n",
                      mixed_count, num_mixed_pairs, mixing_rule_names[mix_flag]);
   }
+
+  // for monitoring, if Pair::ev_tally() was called.
+  did_tally_flag = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -710,8 +711,8 @@ double Pair::mix_energy(double eps1, double eps2, double sig1, double sig2)
   else if (mix_flag == ARITHMETIC)
     return sqrt(eps1*eps2);
   else if (mix_flag == SIXTHPOWER)
-    return (2.0 * sqrt(eps1*eps2) *
-      pow(sig1,3.0) * pow(sig2,3.0) / (pow(sig1,6.0) + pow(sig2,6.0)));
+    return (2.0 * sqrt(eps1*eps2) * powint(sig1, 3) * powint(sig2, 3)
+            / (powint(sig1, 6) + powint(sig2, 6)));
   else did_mix = false;
   return 0.0;
 }
@@ -727,7 +728,7 @@ double Pair::mix_distance(double sig1, double sig2)
   else if (mix_flag == ARITHMETIC)
     return (0.5 * (sig1+sig2));
   else if (mix_flag == SIXTHPOWER)
-    return pow((0.5 * (pow(sig1,6.0) + pow(sig2,6.0))),1.0/6.0);
+    return pow((0.5 * (powint(sig1, 6) + powint(sig2, 6))), 1.0/6.0);
   else return 0.0;
 }
 
@@ -821,7 +822,7 @@ void Pair::map_element2type(int narg, char **arg, bool update_setflag)
   // elements = list of element names
 
   if (narg != ntypes)
-    error->all(FLERR,"Number of element to type mappings does not match number of atom types");
+    error->all(FLERR, "Number of element to type mappings does not match number of atom types");
 
   if (elements) {
     for (i = 0; i < nelements; i++) delete[] elements[i];
@@ -987,7 +988,7 @@ void Pair::ev_setup(int eflag, int vflag, int alloc)
 /* ----------------------------------------------------------------------
    set all flags to zero for energy, virial computation
    called by some complicated many-body potentials that use individual flags
-   to insure no holdover of flags from previous timestep
+   to ensure no holdover of flags from previous timestep
 ------------------------------------------------------------------------- */
 
 void Pair::ev_unset()
@@ -1098,6 +1099,7 @@ void Pair::ev_tally(int i, int j, int nlocal, int newton_pair,
   }
 
   if (num_tally_compute > 0) {
+    did_tally_flag = 1;
     for (int k=0; k < num_tally_compute; ++k) {
       Compute *c = list_tally_compute[k];
       c->pair_tally_callback(i, j, nlocal, newton_pair,
@@ -1793,8 +1795,8 @@ void Pair::write_file(int narg, char **arg)
 
   // parse arguments
 
-  int itype = utils::inumeric(FLERR,arg[0],false,lmp);
-  int jtype = utils::inumeric(FLERR,arg[1],false,lmp);
+  int itype = utils::expand_type_int(FLERR, arg[0], Atom::ATOM, lmp);
+  int jtype = utils::expand_type_int(FLERR, arg[1], Atom::ATOM, lmp);
   if (itype < 1 || itype > atom->ntypes || jtype < 1 || jtype > atom->ntypes)
     error->all(FLERR,"Invalid atom types in pair_write command");
 
@@ -1808,8 +1810,8 @@ void Pair::write_file(int narg, char **arg)
 
   if (n < 2) error->all(FLERR, "Must have at least 2 table values");
 
-  double inner = utils::numeric(FLERR,arg[4],false,lmp);
-  double outer = utils::numeric(FLERR,arg[5],false,lmp);
+  double inner = utils::numeric(FLERR, arg[4], false, lmp);
+  double outer = utils::numeric(FLERR, arg[5], false, lmp);
   if (inner <= 0.0 || inner >= outer)
     error->all(FLERR,"Invalid cutoffs in pair_write command");
 
@@ -1827,13 +1829,13 @@ void Pair::write_file(int narg, char **arg)
     // - if the file already exists, print a message about appending
     //   while printing the date and check that units are consistent.
     if (platform::file_is_readable(table_file)) {
-      std::string units = utils::get_potential_units(table_file,"table");
+      std::string units = utils::get_potential_units(table_file, "table");
       if (!units.empty() && (units != update->unit_style)) {
         error->one(FLERR,"Trying to append to a table file "
                                      "with UNITS: {} while units are {}",
                                      units, update->unit_style);
       }
-      std::string date = utils::get_potential_date(table_file,"table");
+      std::string date = utils::get_potential_date(table_file, "table");
       utils::logmesg(lmp,"Appending to table file {} with DATE: {}\n", table_file, date);
       fp = fopen(table_file.c_str(),"a");
     } else {
@@ -1845,16 +1847,16 @@ void Pair::write_file(int narg, char **arg)
     }
     if (fp == nullptr)
       error->one(FLERR,"Cannot open pair_write file {}: {}",table_file, utils::getsyserror());
-    fprintf(fp,"# Pair potential %s for atom types %d %d: i,r,energy,force\n",
-            force->pair_style,itype,jtype);
+    fprintf(fp, "# Pair potential %s for atom types %d %d: i,r,energy,force\n",
+            force->pair_style, itype, jtype);
     if (style == RLINEAR)
-      fprintf(fp,"\n%s\nN %d R %.15g %.15g\n\n",arg[7],n,inner,outer);
+      fprintf(fp, "\n%s\nN %d R %.15g %.15g\n\n", arg[7], n, inner, outer);
     if (style == RSQ)
-      fprintf(fp,"\n%s\nN %d RSQ %.15g %.15g\n\n",arg[7],n,inner,outer);
+      fprintf(fp, "\n%s\nN %d RSQ %.15g %.15g\n\n", arg[7], n, inner, outer);
   }
 
   // initialize potentials before evaluating pair potential
-  // insures all pair coeffs are set and force constants
+  // ensures all pair coeffs are set and force constants
   // also initialize neighbor so that neighbor requests are processed
   // NOTE: might be safest to just do lmp->init()
 
@@ -1868,7 +1870,7 @@ void Pair::write_file(int narg, char **arg)
   double *eamfp_hold;
 
   Pair *epair = force->pair_match("^eam",0);
-  if (epair) epair->swap_eam(eamfp,&eamfp_hold);
+  if (epair) epair->swap_eam(eamfp, &eamfp_hold);
   if ((comm->me == 0) && (epair))
     error->warning(FLERR,"EAM pair style. Table will not include embedding term");
 
@@ -1877,8 +1879,8 @@ void Pair::write_file(int narg, char **arg)
   double q[2];
   q[0] = q[1] = 1.0;
   if (narg == 10) {
-    q[0] = utils::numeric(FLERR,arg[8],false,lmp);
-    q[1] = utils::numeric(FLERR,arg[9],false,lmp);
+    q[0] = utils::numeric(FLERR, arg[8], false, lmp);
+    q[1] = utils::numeric(FLERR, arg[9], false, lmp);
   }
   double *q_hold;
 
@@ -1891,10 +1893,10 @@ void Pair::write_file(int narg, char **arg)
 
   int masklo,maskhi,nmask,nshiftbits;
   if (style == BMP) {
-    init_bitmap(inner,outer,n,masklo,maskhi,nmask,nshiftbits);
+    init_bitmap(inner, outer, n, masklo, maskhi, nmask, nshiftbits);
     int ntable = 1 << n;
     if (comm->me == 0)
-      fprintf(fp,"\n%s\nN %d BITMAP %.15g %.15g\n\n",arg[7],ntable,inner,outer);
+      fprintf(fp, "\n%s\nN %d BITMAP %.15g %.15g\n\n", arg[7], ntable, inner, outer);
     n = ntable;
   }
 
@@ -1920,7 +1922,7 @@ void Pair::write_file(int narg, char **arg)
     }
 
     if (rsq < cutsq[itype][jtype]) {
-      e = single(0,1,itype,jtype,rsq,1.0,1.0,f);
+      e = single(0, 1, itype, jtype, rsq, 1.0, 1.0, f);
       f *= r;
     } else e = f = 0.0;
     if (comm->me == 0) fprintf(fp,"%8d %- 22.15g %- 22.15g %- 22.15g\n",i+1,r,e,f);
@@ -1929,7 +1931,7 @@ void Pair::write_file(int narg, char **arg)
   // restore original vecs that were swapped in for
 
   double *tmp;
-  if (epair) epair->swap_eam(eamfp_hold,&tmp);
+  if (epair) epair->swap_eam(eamfp_hold, &tmp);
   if (atom->q) atom->q = q_hold;
 
   if (comm->me == 0) fclose(fp);
@@ -1952,19 +1954,18 @@ void Pair::init_bitmap(double inner, double outer, int ntablebits,
     error->warning(FLERR,"Table inner cutoff >= outer cutoff");
 
   int nlowermin = 1;
-  while (!((pow(double(2),(double)nlowermin) <= inner*inner) &&
-           (pow(double(2),(double)nlowermin+1.0) > inner*inner))) {
-    if (pow(double(2),(double)nlowermin) <= inner*inner) nlowermin++;
+  while ((powint(2.0, nlowermin) > inner*inner) || (powint(2.0, nlowermin+1) <= inner*inner)) {
+    if (powint(2.0, nlowermin) <= inner*inner) nlowermin++;
     else nlowermin--;
   }
 
   int nexpbits = 0;
-  double required_range = outer*outer / pow(double(2),(double)nlowermin);
+  double required_range = outer*outer / powint(2.0, nlowermin);
   double available_range = 2.0;
 
   while (available_range < required_range) {
     nexpbits++;
-    available_range = pow(double(2),pow(double(2),(double)nexpbits));
+    available_range = pow(2.0, powint(2.0, nexpbits));
   }
 
   int nmantbits = ntablebits - nexpbits;
@@ -2009,4 +2010,3 @@ double Pair::memory_usage()
   bytes += (double)comm->nthreads*maxcvatom*9 * sizeof(double);
   return bytes;
 }
-

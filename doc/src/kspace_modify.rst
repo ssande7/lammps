@@ -142,7 +142,8 @@ the code will stop with an error message. When this option is set to
 For a typical application, using the automatic parameter generation
 will provide simulations that are either inaccurate or slow. Using this
 option is thus not recommended. For guidelines on how to obtain good
-parameters, see the :doc:`How-To <Howto_dispersion>` discussion.
+parameters, see the :doc:`long-range dispersion howto <Howto_dispersion>`
+discussion.
 
 ----------
 
@@ -458,7 +459,7 @@ The option defaults are as follows:
 * diff = ik (PPPM)
 * disp/auto = no
 * fftbench = no (PPPM)
-* force = -1.0,
+* force = -1.0
 * force/disp/kspace = -1.0
 * force/disp/real = -1.0
 * gewald = gewald/disp = 0.0

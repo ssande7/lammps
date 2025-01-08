@@ -2,11 +2,11 @@ Pair styles
 ===========
 
 Classes that compute pairwise non-bonded interactions are derived from
-the Pair class.  In LAMMPS, pairwise calculation include many-body
-potentials such as EAM, Tersoff, or ReaxFF where particles interact
-without an explicit bond topology but include interactions beyond
-pairwise non-bonded contributions.  New styles can be created to add
-support for additional pair potentials to LAMMPS.  When the
+the ``Pair`` class.  In LAMMPS, pairwise force calculations include
+many-body potentials such as EAM, Tersoff, or ReaxFF where particles
+interact without an explicit bond topology but include interactions
+beyond pairwise non-bonded contributions.  New styles can be created to
+add support for additional pair potentials to LAMMPS.  When the
 modifications are small, sometimes it is more effective to derive from
 an existing pair style class.  This latter approach is also used by
 :doc:`Accelerator packages <Speed_packages>` where the accelerated style
@@ -15,10 +15,13 @@ names differ from their base classes by an appended suffix.
 The file ``src/pair_lj_cut.cpp`` is an example of a Pair class with a
 very simple potential function.  It includes several optional methods to
 enable its use with :doc:`run_style respa <run_style>` and :doc:`compute
-group/group <compute_group_group>`.
+group/group <compute_group_group>`.  :doc:`Developer_write_pair` contains
+a detailed discussion of writing new pair styles from scratch, and how
+simple and more complex pair styles can be implemented with examples
+from existing pair styles.
 
 Here is a brief list of some the class methods in the Pair class that
-*must* be or *may* be overridden in a derived class.
+*must* be or *may* be overridden in a derived class for a new pair style.
 
 +---------------------------------+---------------------------------------------------------------------+
 | Required                        | "pure" methods that *must* be overridden in a derived class         |
@@ -30,47 +33,47 @@ Here is a brief list of some the class methods in the Pair class that
 | coeff                           | set coefficients for one i,j type pair, called from pair_coeff      |
 +---------------------------------+---------------------------------------------------------------------+
 
-+---------------------------------+----------------------------------------------------------------------+
-| Optional                        | methods that have a default or dummy implementation                  |
-+=================================+======================================================================+
-| init_one                        | perform initialization for one i,j type pair                         |
-+---------------------------------+----------------------------------------------------------------------+
-| init_style                      | style initialization: request neighbor list(s), error checks         |
-+---------------------------------+----------------------------------------------------------------------+
-| init_list                       | Neighbor class callback function to pass neighbor list to pair style |
-+---------------------------------+----------------------------------------------------------------------+
-| single                          | force/r and energy of a single pairwise interaction between 2 atoms  |
-+---------------------------------+----------------------------------------------------------------------+
-| compute_inner/middle/outer      | versions of compute used by rRESPA                                   |
-+---------------------------------+----------------------------------------------------------------------+
-| memory_usage                    | return estimated amount of memory used by the pair style             |
-+---------------------------------+----------------------------------------------------------------------+
-| modify_params                   | process arguments to pair_modify command                             |
-+---------------------------------+----------------------------------------------------------------------+
-| extract                         | provide access to internal scalar or per-type data like cutoffs      |
-+---------------------------------+----------------------------------------------------------------------+
-| extract_peratom                 | provide access to internal per-atom data                             |
-+---------------------------------+----------------------------------------------------------------------+
-| setup                           | initialization at the beginning of a run                             |
-+---------------------------------+----------------------------------------------------------------------+
-| finish                          | called at the end of a run, e.g. to print                            |
-+---------------------------------+----------------------------------------------------------------------+
-| write & read_restart            | write/read i,j pair coeffs to restart files                          |
-+---------------------------------+----------------------------------------------------------------------+
-| write & read_restart_settings   | write/read global settings to restart files                          |
-+---------------------------------+----------------------------------------------------------------------+
-| write_data                      | write Pair Coeffs section to data file                               |
-+---------------------------------+----------------------------------------------------------------------+
-| write_data_all                  | write PairIJ Coeffs section to data file                             |
-+---------------------------------+----------------------------------------------------------------------+
-| pack & unpack_forward_comm      | copy data to and from buffer if style uses forward communication     |
-+---------------------------------+----------------------------------------------------------------------+
-| pack & unpack_reverse_comm      | copy data to and from buffer if style uses reverse communication     |
-+---------------------------------+----------------------------------------------------------------------+
-| reinit                          | reset all type-based parameters, called by fix adapt for example     |
-+---------------------------------+----------------------------------------------------------------------+
-| reset_dt                        | called when the time step is changed by timestep or fix reset/dt     |
-+---------------------------------+----------------------------------------------------------------------+
++---------------------------------+------------------------------------------------------------------------+
+| Optional                        | methods that have a default or dummy implementation                    |
++=================================+========================================================================+
+| init_one                        | perform initialization for one i,j type pair                           |
++---------------------------------+------------------------------------------------------------------------+
+| init_style                      | style initialization: request neighbor list(s), error checks           |
++---------------------------------+------------------------------------------------------------------------+
+| init_list                       | Neighbor class callback function to pass neighbor list to pair style   |
++---------------------------------+------------------------------------------------------------------------+
+| single                          | force/r and energy of a single pairwise interaction between two atoms  |
++---------------------------------+------------------------------------------------------------------------+
+| compute_inner/middle/outer      | versions of compute used by rRESPA                                     |
++---------------------------------+------------------------------------------------------------------------+
+| memory_usage                    | return estimated amount of memory used by the pair style               |
++---------------------------------+------------------------------------------------------------------------+
+| modify_params                   | process arguments to pair_modify command                               |
++---------------------------------+------------------------------------------------------------------------+
+| extract                         | provide access to internal scalar or per-type data like cutoffs        |
++---------------------------------+------------------------------------------------------------------------+
+| extract_peratom                 | provide access to internal per-atom data                               |
++---------------------------------+------------------------------------------------------------------------+
+| setup                           | initialization at the beginning of a run                               |
++---------------------------------+------------------------------------------------------------------------+
+| finish                          | called at the end of a run, e.g. to print                              |
++---------------------------------+------------------------------------------------------------------------+
+| write & read_restart            | write/read i,j pair coeffs to restart files                            |
++---------------------------------+------------------------------------------------------------------------+
+| write & read_restart_settings   | write/read global settings to restart files                            |
++---------------------------------+------------------------------------------------------------------------+
+| write_data                      | write Pair Coeffs section to data file                                 |
++---------------------------------+------------------------------------------------------------------------+
+| write_data_all                  | write PairIJ Coeffs section to data file                               |
++---------------------------------+------------------------------------------------------------------------+
+| pack & unpack_forward_comm      | copy data to and from buffer if style uses forward communication       |
++---------------------------------+------------------------------------------------------------------------+
+| pack & unpack_reverse_comm      | copy data to and from buffer if style uses reverse communication       |
++---------------------------------+------------------------------------------------------------------------+
+| reinit                          | reset all type-based parameters, called by fix adapt for example       |
++---------------------------------+------------------------------------------------------------------------+
+| reset_dt                        | called when the time step is changed by timestep or fix reset/dt       |
++---------------------------------+------------------------------------------------------------------------+
 
 Here is a list of flags or settings that should be set in the
 constructor of the derived pair class when they differ from the default

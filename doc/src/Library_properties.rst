@@ -5,6 +5,7 @@ This section documents the following functions:
 
 - :cpp:func:`lammps_get_natoms`
 - :cpp:func:`lammps_get_thermo`
+- :cpp:func:`lammps_last_thermo`
 - :cpp:func:`lammps_extract_box`
 - :cpp:func:`lammps_reset_box`
 - :cpp:func:`lammps_memory_usage`
@@ -12,6 +13,9 @@ This section documents the following functions:
 - :cpp:func:`lammps_extract_setting`
 - :cpp:func:`lammps_extract_global_datatype`
 - :cpp:func:`lammps_extract_global`
+- :cpp:func:`lammps_extract_pair_dimension`
+- :cpp:func:`lammps_extract_pair`
+- :cpp:func:`lammps_map_atom`
 
 --------------------
 
@@ -30,7 +34,7 @@ course, changing values should be done with care.  When accessing per-atom
 data, please note that these data are the per-processor **local** data and are
 indexed accordingly. Per-atom data can change sizes and ordering at
 every neighbor list rebuild or atom sort event as atoms migrate between
-sub-domains and processors.
+subdomains and processors.
 
 .. code-block:: c
 
@@ -81,6 +85,11 @@ sub-domains and processors.
 
 -----------------------
 
+.. doxygenfunction:: lammps_last_thermo
+   :project: progguide
+
+-----------------------
+
 .. doxygenfunction:: lammps_extract_box
    :project: progguide
 
@@ -112,5 +121,20 @@ sub-domains and processors.
 -----------------------
 
 .. doxygenfunction:: lammps_extract_global
+   :project: progguide
+
+-----------------------
+
+.. doxygenfunction:: lammps_extract_pair_dimension
+   :project: progguide
+
+-----------------------
+
+.. doxygenfunction:: lammps_extract_pair
+   :project: progguide
+
+-----------------------
+
+.. doxygenfunction:: lammps_map_atom
    :project: progguide
 

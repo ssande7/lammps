@@ -31,8 +31,7 @@
 
 using namespace LAMMPS_NS;
 
-#define MAXLINE 1024
-#define MAXWORD 3
+static constexpr int MAXLINE = 1024;
 
 /* ---------------------------------------------------------------------- */
 
@@ -73,7 +72,7 @@ void MLIAPDescriptorSNAP::compute_descriptors(class MLIAPData *data)
   for (int ii = 0; ii < data->nlistatoms; ii++) {
     const int ielem = data->ielems[ii];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     const int jnum = data->numneighs[ii];
     snaptr->grow_rij(jnum);
@@ -129,7 +128,7 @@ void MLIAPDescriptorSNAP::compute_forces(class MLIAPData *data)
     const int i = data->iatoms[ii];
     const int ielem = data->ielems[ii];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     const int jnum = data->numneighs[ii];
     snaptr->grow_rij(jnum);
@@ -200,7 +199,7 @@ void MLIAPDescriptorSNAP::compute_force_gradients(class MLIAPData *data)
     const int i = data->iatoms[ii];
     const int ielem = data->ielems[ii];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     const int jnum = data->numneighs[ii];
     snaptr->grow_rij(jnum);
@@ -270,7 +269,7 @@ void MLIAPDescriptorSNAP::compute_descriptor_gradients(class MLIAPData *data)
   for (int ii = 0; ii < data->nlistatoms; ii++) {
     const int ielem = data->ielems[ii];
 
-    // insure rij, inside, wj, and rcutij are of size jnum
+    // ensure rij, inside, wj, and rcutij are of size jnum
 
     const int jnum = data->numneighs[ii];
     snaptr->grow_rij(jnum);
@@ -380,7 +379,8 @@ void MLIAPDescriptorSNAP::read_paramfile(char *paramfilename)
                  utils::getsyserror());
   }
 
-  char line[MAXLINE], *ptr;
+  char line[MAXLINE] = {'\0'};
+  char *ptr;
   int eof = 0;
   int n;
 

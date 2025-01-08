@@ -80,7 +80,7 @@ ComputeCentroidStressAtom::ComputeCentroidStressAtom(LAMMPS *lmp, int narg, char
   comm_reverse = 9;
 
   // store temperature ID used by stress computation
-  // insure it is valid for temperature computation
+  // ensure it is valid for temperature computation
 
   if (strcmp(arg[3], "NULL") == 0)
     id_temp = nullptr;
@@ -303,8 +303,8 @@ void ComputeCentroidStressAtom::compute_peratom()
   // add in per-atom contributions from relevant fixes
   // skip if vatom = nullptr
   // possible during setup phase if fix has not initialized its vatom yet
-  // e.g. fix ave/spatial defined before fix shake,
-  //   and fix ave/spatial uses a per-atom stress from this compute as input
+  // e.g. fix ave/chunk defined before fix shake,
+  //   and fix ave/chunk uses a per-atom stress from this compute as input
   // fix styles are CENTROID_SAME, CENTROID_AVAIL or CENTROID_NOTAVAIL
 
   if (fixflag) {
@@ -395,7 +395,7 @@ void ComputeCentroidStressAtom::compute_peratom()
     } else {
 
       // invoke temperature if it hasn't been already
-      // this insures bias factor is pre-computed
+      // this ensures bias factor is pre-computed
 
       if (keflag && temperature->invoked_scalar != update->ntimestep) temperature->compute_scalar();
 

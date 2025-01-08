@@ -37,8 +37,7 @@
 
 using namespace LAMMPS_NS;
 
-#define MAXLINE 1024
-#define DELTA 4
+static constexpr int DELTA = 4;
 
 /* ---------------------------------------------------------------------- */
 
@@ -360,7 +359,7 @@ void PairKolmogorovCrespiZ::read_file(char *filename)
       params[nparams].z06 = pow(params[nparams].z0, 6);
 
       nparams++;
-      if (nparams >= pow(atom->ntypes, 3)) break;
+      if (nparams >= pow((double)atom->ntypes, 3)) break;
     }
   }
   MPI_Bcast(&nparams, 1, MPI_INT, 0, world);

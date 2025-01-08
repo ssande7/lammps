@@ -20,13 +20,13 @@ Syntax
        *empty* = no args
        *region* args = region-ID
        *type* or *id* or *molecule*
-         args = list of one or more atom types, atom IDs, or molecule IDs
-           any entry in list can be a sequence formatted as A:B or A:B:C where
+         args = list of one or more atom types (1-Ntypes or type label), atom IDs, or molecule IDs
+           any numeric entry in list can be a sequence formatted as A:B or A:B:C where
            A = starting index, B = ending index,
            C = increment between indices, 1 if not specified
          args = logical value
            logical = "<" or "<=" or ">" or ">=" or "==" or "!="
-           value = an atom type or atom ID or molecule ID (depending on *style*\ )
+           value = an atom type (1-Ntypes or type label) or atom ID or molecule ID (depending on *style*\ )
          args = logical value1 value2
            logical = "<>"
            value1,value2 = atom types or atom IDs or molecule IDs (depending on *style*\ )
@@ -52,6 +52,7 @@ Examples
 
    group edge region regstrip
    group water type 3 4
+   group water type OW HT
    group sub id 10 25 50
    group sub id 10 25 50 500:1000
    group sub id 100:10000:10
@@ -119,7 +120,7 @@ three styles can use arguments specified in one of two formats.
 
 The first format is a list of values (types or IDs).  For example, the
 second command in the examples above puts all atoms of type 3 or 4 into
-the group named *water*\ .  Each entry in the list can be a
+the group named *water*\ .  Each numeric entry in the list can be a
 colon-separated sequence ``A:B`` or ``A:B:C``, as in two of the examples
 above.  A "sequence" generates a sequence of values (types or IDs),
 with an optional increment.  The first example with ``500:1000`` has the
@@ -135,7 +136,8 @@ except ``<>`` take a single argument.  The third example above adds all
 atoms with IDs from 1 to 150 to the group named *sub*\ .  The logical ``<>``
 means "between" and takes 2 arguments.  The fourth example above adds all
 atoms belonging to molecules with IDs from 50 to 250 (inclusive) to
-the group named polyA.
+the group named polyA.  For the *type* style, type labels are converted into
+numeric types before being evaluated.
 
 The *variable* style evaluates a variable to determine which atoms to
 add to the group.  It must be an :doc:`atom-style variable <variable>`
@@ -173,15 +175,15 @@ Note that these lines
    thermo_style    custom step temp pe c_2
    run             0
 
-are necessary to insure that the "eatom" variable is current when the
+are necessary to ensure that the "eatom" variable is current when the
 group command invokes it.  Because the eatom variable computes the
 per-atom energy via the pe/atom compute, it will only be current if a
 run has been performed which evaluated pairwise energies, and the
 pe/atom compute was actually invoked during the run.  Printing the
-thermodynamic info for compute 2 insures that this is the case, since
+thermodynamic info for compute 2 ensures that this is the case, since
 it sums the pe/atom compute values (in the reduce compute) to output
 them to the screen.  See the "Variable Accuracy" section of the
-:doc:`variable <variable>` page for more details on insuring that
+:doc:`variable <variable>` page for more details on ensuring that
 variables are current when they are evaluated between runs.
 
 The *include* style with its arg *molecule* adds atoms to a group that
@@ -304,7 +306,7 @@ group and running further.
    not all allow for use of a dynamic group.  If you get an error
    message that this is not allowed, but feel that it should be for the
    fix or compute in question, then please post your reasoning to the
-   `LAMMPS forum at MatSci <https://matsci.org/c/lammps-development/>`_
+   `LAMMPS forum at MatSci <https://matsci.org/c/lammps-development/42>`_
    and we can look into changing it.  The same applies if you come
    across inconsistent behavior when dynamic groups are allowed.
 
