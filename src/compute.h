@@ -114,6 +114,7 @@ class Compute : protected Pointers {
   ~Compute() override;
   void modify_params(int, char **);
   virtual void reset_extra_dof();
+  virtual void post_constructor() {}
 
   void init_flags();
   virtual void init() = 0;
