@@ -21,6 +21,7 @@
 #include "atom.h"
 #include "comm.h"
 #include "compute.h"
+#include "compute_temp_deform.h"
 #include "domain.h"
 #include "error.h"
 #include "fix_deform.h"
@@ -46,7 +47,7 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
   // default values
 
   psllod_flag = 0;
-  peculiar_flag = 1;
+  peculiar_flag = 0;
   if (mtchain_default_flag) mtchain = 1;
 
   // select SLLOD/p-SLLOD/g-SLLOD variant and velocity frame
@@ -61,6 +62,10 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg],"peculiar") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "fix nvt/sllod peculiar", error);
       peculiar_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"kick") == 0) {
+      if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "fix nvt/sllod kick", error);
+      kick_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
       iarg += 2;
     } else iarg++;
   }
@@ -85,7 +90,12 @@ void FixNVTSllod::init()
     error->all(FLERR,"Temperature for fix {} does not have a bias", style);
 
   nondeformbias = 0;
-  if (strcmp(temperature->style,"temp/deform") != 0) nondeformbias = 1;
+  if (strcmp(temperature->style,"temp/deform") != 0) {
+    nondeformbias = 1;
+    if (comm->me == 0 && !peculiar_flag)
+      error->warning(FLERR,"Fix nvt/sllod used with lab-frame velocity and non-deform "
+                     "temperature bias could cause inaccurate results");
+  }
 
   // check fix deform remap settings
 
@@ -136,6 +146,17 @@ void FixNVTSllod::init()
             "if the peculiar flag is not set", style);
     }
   }
+
+  if (kick_flag) {
+    // Apply initial kick if we can.
+    // Don't kick if velocity stored in peculiar frame.
+    if (!peculiar_flag && !nondeformbias) {
+      dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all();
+    } else if (comm->me == 0) {
+      error->warning(FLERR,"fix nvt/sllod using peculiar-frame velocity or "
+                     "non-deform bias. Ignoring kick flag.");
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -149,6 +170,20 @@ void FixNVTSllod::nh_v_temp()
   //   calculate temperature since some computes require temp
   //   computed on current nlocal atoms to remove bias
 
+  Compute* extra_bias = nullptr;
+  if (!nondeformbias) {
+    // If storing velocity in lab-frame, remove sllod streaming component
+    ComputeTempDeform* deform = dynamic_cast<ComputeTempDeform*>(temperature);
+    if (!peculiar_flag) deform->remove_deform_bias_all();
+    // Flag extra bias to remove for thermostat
+    if (deform->which == FixNH::BIAS) {
+      extra_bias = deform->temperature;
+    }
+  } else if (which == FixNH::BIAS) {
+    // Non-deform bias, so make sure bias is available
+    if (peculiar_flag) extra_bias = temperature;
+  }
+
   double **v = atom->v;
   double **x = atom->x;
   int *mask = atom->mask;
@@ -160,9 +195,9 @@ void FixNVTSllod::nh_v_temp()
   double grad_u[6];
   MathExtra::multiply_shape_shape(domain->h_rate,domain->h_inv,grad_u);
 
-  if (peculiar_flag) {
+  if (peculiar_flag || !nondeformbias) {
     // update velocities in a time-reversible manner
-    // atom velocities stored in peculiar frame w.r.t. streaming velocity
+    // atom velocities in peculiar frame w.r.t. streaming velocity
     // Remove/restore bias only for thermostat step if needed.
     //   Loops need to be split in this case so that timestep stays reversible,
     //   since some temperature computes require v hasn't changed after compute_scalar().
@@ -176,90 +211,106 @@ void FixNVTSllod::nh_v_temp()
     vfac[0] = exp(-grad_u[0]*dt4);
     vfac[1] = exp(-grad_u[1]*dt4);
     vfac[2] = exp(-grad_u[2]*dt4);
-    if (which == FixNH::BIAS) {
-      for (int i = 0; i < nlocal; ++i) {
-        if (mask[i] & groupbit) {
-          v[i][0] *= vfac[0];
-          v[i][1] *= vfac[1];
-          v[i][2] *= vfac[2];
-          if (psllod_flag) {
-            v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
-            v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
-                       + dt4*grad_u[0]*grad_u[0]*x[i][0];
-          } else {
-            v[i][1] -= dt4*grad_u[3]*v[i][2];
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+    if (peculiar_flag || !nondeformbias) {
+      if (extra_bias) {
+        // velocity in peculiar frame w.r.t. box deformation, but need to
+        // account for extra velocity bias for thermostat
+        for (int i = 0; i < nlocal; ++i) {
+          if (mask[i] & groupbit) {
+            v[i][0] *= vfac[0];
+            v[i][1] *= vfac[1];
+            v[i][2] *= vfac[2];
+            if (psllod_flag) {
+              v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
+              v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                         + dt4*grad_u[0]*grad_u[0]*x[i][0];
+            } else {
+              v[i][1] -= dt4*grad_u[3]*v[i][2];
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+            }
           }
         }
-      }
-      temperature->compute_scalar();
-      for (int i = 0; i < nlocal; ++i) {
-        if (mask[i] & groupbit) {
-          temperature->remove_bias(i,v[i]);
-          v[i][0] *= factor_eta;
-          v[i][1] *= factor_eta;
-          v[i][2] *= factor_eta;
-          temperature->restore_bias(i,v[i]);
-        }
-      }
-      for (int i = 0; i < nlocal; ++i) {
-        if (mask[i] & groupbit) {
-          if (psllod_flag) {
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
-                       + dt4*grad_u[0]*grad_u[0]*x[i][0];
-            v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
-            v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
-          } else {
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
-            v[i][1] -= dt4*grad_u[3]*v[i][2];
-          }
-          v[i][0] *= vfac[0];
-          v[i][1] *= vfac[1];
-          v[i][2] *= vfac[2];
-        }
-      }
-    } else {
-      for (int i = 0; i < nlocal; ++i) {
-        if (mask[i] & groupbit) {
-          v[i][0] *= vfac[0];
-          v[i][1] *= vfac[1];
-          v[i][2] *= vfac[2];
-          if (psllod_flag) {
-            v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
-            v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
-                       + dt4*grad_u[0]*grad_u[0]*x[i][0];
+
+        extra_bias->compute_scalar();
+        for (int i = 0; i < nlocal; ++i) {
+          if (mask[i] & groupbit) {
+            extra_bias->remove_bias(i,v[i]);
             v[i][0] *= factor_eta;
             v[i][1] *= factor_eta;
             v[i][2] *= factor_eta;
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
-                       + dt4*grad_u[0]*grad_u[0]*x[i][0];
-            v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
-            v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
-          } else {
-            v[i][1] -= dt4*grad_u[3]*v[i][2];
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
-            v[i][0] *= factor_eta;
-            v[i][1] *= factor_eta;
-            v[i][2] *= factor_eta;
-            v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
-            v[i][1] -= dt4*grad_u[3]*v[i][2];
+            extra_bias->restore_bias(i,v[i]);
           }
-          v[i][0] *= vfac[0];
-          v[i][1] *= vfac[1];
-          v[i][2] *= vfac[2];
+        }
+
+        for (int i = 0; i < nlocal; ++i) {
+          if (mask[i] & groupbit) {
+            if (psllod_flag) {
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                         + dt4*grad_u[0]*grad_u[0]*x[i][0];
+              v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
+              v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
+            } else {
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+              v[i][1] -= dt4*grad_u[3]*v[i][2];
+            }
+            v[i][0] *= vfac[0];
+            v[i][1] *= vfac[1];
+            v[i][2] *= vfac[2];
+          }
+        }
+
+      } else {
+        // velocity in peculiar frame, no extra bias to worry about
+        for (int i = 0; i < nlocal; ++i) {
+          if (mask[i] & groupbit) {
+            v[i][0] *= vfac[0];
+            v[i][1] *= vfac[1];
+            v[i][2] *= vfac[2];
+            if (psllod_flag) {
+              v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
+              v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                         + dt4*grad_u[0]*grad_u[0]*x[i][0];
+              v[i][0] *= factor_eta;
+              v[i][1] *= factor_eta;
+              v[i][2] *= factor_eta;
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                         + dt4*grad_u[0]*grad_u[0]*x[i][0];
+              v[i][1] -= dt4*grad_u[3]*v[i][2] + dt4*grad_u[1]*grad_u[1]*x[i][1];
+              v[i][2] -= dt4*grad_u[2]*grad_u[2]*x[i][2];
+            } else {
+              v[i][1] -= dt4*grad_u[3]*v[i][2];
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+              v[i][0] *= factor_eta;
+              v[i][1] *= factor_eta;
+              v[i][2] *= factor_eta;
+              v[i][0] -= dt4*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+              v[i][1] -= dt4*grad_u[3]*v[i][2];
+            }
+            v[i][0] *= vfac[0];
+            v[i][1] *= vfac[1];
+            v[i][2] *= vfac[2];
+          }
         }
       }
     }
+
+    if (!nondeformbias && !peculiar_flag) {
+      // if storing velocity in lab-frame, restore sllod streaming component
+      dynamic_cast<ComputeTempDeform*>(temperature)->restore_deform_bias_all();
+    }
+
   } else {
     // remove and restore bias = streaming velocity = Hrate*lamda + Hratelo
     // vdelu = SLLOD correction   = -vthermal . grad_u
     //    OR = p-SLLOD correction = -vthermal . grad_u - x . grad_u . grad_u
     //                            = -v . grad_u
-    // Integrating as below is not reversible!
-    if (nondeformbias) temperature->compute_scalar();
+    // Integrating as below is not reversible! Bias is a function of x,
+    // and therefore jumps after each x update, which can cause incorrect
+    // energy dissipation and viscosity.
     double vdelu[3];
+    temperature->compute_scalar();
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         if (!psllod_flag) temperature->remove_bias(i,v[i]);
@@ -282,7 +333,7 @@ void FixNVTSllod::nh_v_temp()
 
 void FixNVTSllod::nve_x()
 {
-  if (!peculiar_flag) return FixNH::nve_x();
+  if (!peculiar_flag && nondeformbias) return FixNH::nve_x();
 
   double **x = atom->x;
   double **v = atom->v;
@@ -293,7 +344,8 @@ void FixNVTSllod::nve_x()
 
   // x update by full step only for atoms in group
   // identical for SLLOD and p-SLLOD
-  // velocity stored as peculiar, so need to add in streaming velocity here
+  // velocity treated in peculiar frame relative to sllod streaming,
+  // so need to manually account for streaming velocity
 
   double dtv2 = dtv*0.5;
   double grad_u[6], xfac[3];
@@ -302,7 +354,10 @@ void FixNVTSllod::nve_x()
   xfac[1] = exp(grad_u[1]*dtv2);
   xfac[2] = exp(grad_u[2]*dtv2);
 
-  // Fix deform keeps the box centre fixed under elongation,
+  if (!peculiar_flag && !nondeformbias)
+    dynamic_cast<ComputeTempDeform*>(temperature)->remove_deform_bias_all();
+
+  // Fix deform keeps the box center fixed under elongation,
   // and the lower corner fixed under shear, so adjust for that
   // to avoid an apparent drift relative to the box and prevent
   // extra atom exchanges between MPI ranks
@@ -329,4 +384,8 @@ void FixNVTSllod::nve_x()
       x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
     }
   }
+
+  // x has changed, so can't just call restore_deform_bias_all
+  if (!peculiar_flag && !nondeformbias)
+    dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all();
 }

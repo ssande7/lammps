@@ -361,6 +361,8 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) :
       iarg += 2;
     } else if (strcmp(arg[iarg], "peculiar") == 0) {
       iarg += 2;
+    } else if (strcmp(arg[iarg], "kick") == 0) {
+      iarg += 2;
 
     } else error->all(FLERR,"Unknown fix {} keyword: {}", style, arg[iarg]);
   }

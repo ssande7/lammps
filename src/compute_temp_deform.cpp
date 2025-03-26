@@ -22,8 +22,8 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#include "fix_nh.h"
 #include "fix_deform.h"
-#include "force.h"
 #include "group.h"
 #include "memory.h"
 #include "modify.h"
@@ -33,9 +33,19 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeTempDeform::ComputeTempDeform(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
+ComputeTempDeform::ComputeTempDeform(LAMMPS *lmp, int narg, char **arg) :
+  Compute(lmp, narg, arg), temperature(nullptr), id_temp(nullptr)
 {
-  if (narg != 3) error->all(FLERR, "Illegal compute temp/deform command");
+  tcomputeflag = 1;
+  for (int iarg = 3; iarg < narg; ++iarg) {
+    if (strcmp(arg[iarg], "temp")==0) {
+      ++iarg;
+      if (iarg >= narg)
+        error->all(FLERR, "Missing argument for name of temperature compute in compute temp/deform");
+      id_temp = utils::strdup(arg[iarg]);
+      tcomputeflag = 0;
+    } else error->all(FLERR, "Illegal compute temp/deform command");
+  }
 
   scalar_flag = vector_flag = 1;
   size_vector = 6;
@@ -51,12 +61,24 @@ ComputeTempDeform::ComputeTempDeform(LAMMPS *lmp, int narg, char **arg) : Comput
 
 /* ---------------------------------------------------------------------- */
 
+void ComputeTempDeform::post_constructor() {
+  if (tcomputeflag) {
+    id_temp = utils::strdup(std::string(id) + "_temp");
+    modify->add_compute(fmt::format("{} {} temp", id_temp, group->names[igroup]));
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
 ComputeTempDeform::~ComputeTempDeform()
 {
-  if (!copymode) {
-    memory->destroy(vbiasall);
-    delete[] vector;
-  }
+  if (copymode) return;
+  memory->destroy(vbiasall);
+
+  // delete temperature compute if created by this compute
+
+  if (tcomputeflag) modify->delete_compute(id_temp);
+  delete [] id_temp;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -71,6 +93,29 @@ void ComputeTempDeform::init()
       error->warning(FLERR, "Using compute temp/deform with inconsistent fix deform remap option");
   } else
     error->warning(FLERR, "Using compute temp/deform with no fix deform defined");
+
+  // Check internal temperature compute
+
+  temperature = modify->get_compute_by_id(id_temp);
+  if (!temperature)
+    error->all(FLERR,"Temperature ID {} for compute temp/deform does not exist", id_temp);
+  if (temperature->tempflag == 0)
+    error->all(FLERR,"Compute temp/deform temperature ID {} does not compute temperature", id_temp);
+  if (temperature->igroup != igroup)
+    error->all(FLERR,"Group of temperature compute with ID {} for compute temp/deform does not match", id_temp);
+
+  // Avoid possibility of self-referential loop
+
+  if (strcmp(temperature->style, "temp/deform")==0)
+    error->all(FLERR,"Compute temp/deform temperature ID {} cannot be of style temp/deform", id_temp);
+
+  if (temperature->tempbias) which = FixNH::BIAS;
+  else which = FixNH::NOBIAS;
+
+  vector = temperature->vector;
+
+  // Make sure dof_compute of temperature compute is called first
+  temperature->setup();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -88,61 +133,19 @@ void ComputeTempDeform::dof_compute()
 {
   adjust_dof_fix();
   natoms_temp = group->count(igroup);
-  dof = domain->dimension * natoms_temp;
-  dof -= extra_dof + fix_dof;
-  if (dof > 0)
-    tfactor = force->mvv2e / (dof * force->boltz);
-  else
-    tfactor = 0.0;
+  dof = temperature->dof;
 }
 
 /* ---------------------------------------------------------------------- */
 
 double ComputeTempDeform::compute_scalar()
 {
-  double lamda[3], vstream[3], vthermal[3];
-
   invoked_scalar = update->ntimestep;
 
-  double **x = atom->x;
-  double **v = atom->v;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
+  remove_deform_bias_all();
+  scalar = temperature->compute_scalar();
+  restore_deform_bias_all();
 
-  // lamda = 0-1 triclinic lamda coords
-  // vstream = streaming velocity = Hrate*lamda + Hratelo
-  // vthermal = thermal velocity = v - vstream
-
-  double *h_rate = domain->h_rate;
-  double *h_ratelo = domain->h_ratelo;
-
-  double t = 0.0;
-
-  for (int i = 0; i < nlocal; i++)
-    if (mask[i] & groupbit) {
-      domain->x2lamda(x[i], lamda);
-      vstream[0] = h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
-      vstream[1] = h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
-      vstream[2] = h_rate[2] * lamda[2] + h_ratelo[2];
-      vthermal[0] = v[i][0] - vstream[0];
-      vthermal[1] = v[i][1] - vstream[1];
-      vthermal[2] = v[i][2] - vstream[2];
-      if (rmass)
-        t += (vthermal[0] * vthermal[0] + vthermal[1] * vthermal[1] + vthermal[2] * vthermal[2]) *
-            rmass[i];
-      else
-        t += (vthermal[0] * vthermal[0] + vthermal[1] * vthermal[1] + vthermal[2] * vthermal[2]) *
-            mass[type[i]];
-    }
-
-  MPI_Allreduce(&t, &scalar, 1, MPI_DOUBLE, MPI_SUM, world);
-  if (dynamic) dof_compute();
-  if (dof < 0.0 && natoms_temp > 0.0)
-    error->all(FLERR, "Temperature compute degrees of freedom < 0");
-  scalar *= tfactor;
   return scalar;
 }
 
@@ -150,48 +153,11 @@ double ComputeTempDeform::compute_scalar()
 
 void ComputeTempDeform::compute_vector()
 {
-  double lamda[3], vstream[3], vthermal[3];
-
   invoked_vector = update->ntimestep;
 
-  double **x = atom->x;
-  double **v = atom->v;
-  double *mass = atom->mass;
-  double *rmass = atom->rmass;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  double *h_rate = domain->h_rate;
-  double *h_ratelo = domain->h_ratelo;
-
-  double massone, t[6];
-  for (auto &ti : t) ti = 0.0;
-
-  for (int i = 0; i < nlocal; i++)
-    if (mask[i] & groupbit) {
-      domain->x2lamda(x[i], lamda);
-      vstream[0] = h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
-      vstream[1] = h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
-      vstream[2] = h_rate[2] * lamda[2] + h_ratelo[2];
-      vthermal[0] = v[i][0] - vstream[0];
-      vthermal[1] = v[i][1] - vstream[1];
-      vthermal[2] = v[i][2] - vstream[2];
-
-      if (rmass)
-        massone = rmass[i];
-      else
-        massone = mass[type[i]];
-      t[0] += massone * vthermal[0] * vthermal[0];
-      t[1] += massone * vthermal[1] * vthermal[1];
-      t[2] += massone * vthermal[2] * vthermal[2];
-      t[3] += massone * vthermal[0] * vthermal[1];
-      t[4] += massone * vthermal[0] * vthermal[2];
-      t[5] += massone * vthermal[1] * vthermal[2];
-    }
-
-  MPI_Allreduce(t, vector, 6, MPI_DOUBLE, MPI_SUM, world);
-  for (int i = 0; i < 6; i++) vector[i] *= force->mvv2e;
+  remove_deform_bias_all();
+  temperature->compute_vector();
+  restore_deform_bias_all();
 }
 
 /* ----------------------------------------------------------------------
@@ -199,6 +165,69 @@ void ComputeTempDeform::compute_vector()
 ------------------------------------------------------------------------- */
 
 void ComputeTempDeform::remove_bias(int i, double *v)
+{
+  remove_deform_bias(i, v);
+  if (which == FixNH::BIAS) temperature->remove_bias(i, v);
+}
+
+/* ----------------------------------------------------------------------
+   remove velocity bias from atom I to leave thermal velocity
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::remove_bias_thr(int i, double *v, double *b)
+{
+  remove_deform_bias_thr(i, v, b);
+  if (which == FixNH::BIAS) temperature->remove_bias_thr(i, v, b);
+}
+
+/* ----------------------------------------------------------------------
+   remove velocity bias from all atoms to leave thermal velocity
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::remove_bias_all()
+{
+  remove_deform_bias_all();
+  if (which == FixNH::BIAS) temperature->remove_bias_all();
+}
+
+/* ----------------------------------------------------------------------
+   add back in velocity bias to atom I removed by remove_bias()
+   assume remove_bias() was previously called
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::restore_bias(int i, double *v)
+{
+  if (which == FixNH::BIAS) temperature->restore_bias(i, v);
+  restore_deform_bias(i, v);
+}
+
+/* ----------------------------------------------------------------------
+   add back in velocity bias to atom I removed by remove_bias_thr()
+   assume remove_bias_thr() was previously called with the same buffer b
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::restore_bias_thr(int i, double *v, double *b)
+{
+  if (which == FixNH::BIAS) temperature->restore_bias_thr(i, v, b);
+  restore_deform_bias_thr(i, v, b);
+}
+
+/* ----------------------------------------------------------------------
+   add back in velocity bias to all atoms removed by remove_bias_all()
+   assume remove_bias_all() was previously called
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::restore_bias_all()
+{
+  if (which == FixNH::BIAS) temperature->restore_bias_all();
+  restore_deform_bias_all();
+}
+
+/* ----------------------------------------------------------------------
+   remove velocity bias from atom I due to deformation
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::remove_deform_bias(int i, double *v)
 {
   double lamda[3];
   double *h_rate = domain->h_rate;
@@ -214,29 +243,37 @@ void ComputeTempDeform::remove_bias(int i, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I to leave thermal velocity
+   remove velocity bias from atom I due to deformation
 ------------------------------------------------------------------------- */
 
-void ComputeTempDeform::remove_bias_thr(int i, double *v, double *b)
+void ComputeTempDeform::remove_deform_bias_thr(int i, double *v, double *b)
 {
   double lamda[3];
   double *h_rate = domain->h_rate;
   double *h_ratelo = domain->h_ratelo;
 
   domain->x2lamda(atom->x[i], lamda);
-  b[0] = h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
-  b[1] = h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
-  b[2] = h_rate[2] * lamda[2] + h_ratelo[2];
-  v[0] -= b[0];
-  v[1] -= b[1];
-  v[2] -= b[2];
+  if (which == FixNH::NOBIAS) {
+    b[0] = h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
+    b[1] = h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
+    b[2] = h_rate[2] * lamda[2] + h_ratelo[2];
+    v[0] -= b[0];
+    v[1] -= b[1];
+    v[2] -= b[2];
+  } else {
+    // b needed by internal temperature compute, so just re-calculate deform bias when restoring
+    v[0] -= h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
+    v[1] -= h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
+    v[2] -= h_rate[2] * lamda[2] + h_ratelo[2];
+  }
 }
 
+
 /* ----------------------------------------------------------------------
-   remove velocity bias from all atoms to leave thermal velocity
+   remove deform velocity bias from all atoms
 ------------------------------------------------------------------------- */
 
-void ComputeTempDeform::remove_bias_all()
+void ComputeTempDeform::remove_deform_bias_all()
 {
   double **v = atom->v;
   int *mask = atom->mask;
@@ -255,8 +292,7 @@ void ComputeTempDeform::remove_bias_all()
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       domain->x2lamda(atom->x[i], lamda);
-      vbiasall[i][0] =
-          h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
+      vbiasall[i][0] = h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
       vbiasall[i][1] = h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
       vbiasall[i][2] = h_rate[2] * lamda[2] + h_ratelo[2];
       v[i][0] -= vbiasall[i][0];
@@ -266,11 +302,11 @@ void ComputeTempDeform::remove_bias_all()
 }
 
 /* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias()
+   add back in velocity bias to atom I removed by remove_deform_bias()
    assume remove_bias() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempDeform::restore_bias(int /*i*/, double *v)
+void ComputeTempDeform::restore_deform_bias(int /*i*/, double *v)
 {
   v[0] += vbias[0];
   v[1] += vbias[1];
@@ -278,23 +314,37 @@ void ComputeTempDeform::restore_bias(int /*i*/, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias_thr()
-   assume remove_bias_thr() was previously called with the same buffer b
+   add back in deform velocity bias to atom I removed by
+   remove_deform_bias_thr()
+   assume remove_deform_bias_thr() was previously called with the same
+   buffer b
 ------------------------------------------------------------------------- */
 
-void ComputeTempDeform::restore_bias_thr(int /*i*/, double *v, double *b)
+void ComputeTempDeform::restore_deform_bias_thr(int i, double *v, double *b)
 {
-  v[0] += b[0];
-  v[1] += b[1];
-  v[2] += b[2];
+  if (which == FixNH::NOBIAS) {
+    v[0] += b[0];
+    v[1] += b[1];
+    v[2] += b[2];
+  } else {
+    double lamda[3];
+    double *h_rate = domain->h_rate;
+    double *h_ratelo = domain->h_ratelo;
+
+    domain->x2lamda(atom->x[i], lamda);
+    v[0] += h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
+    v[1] += h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
+    v[2] += h_rate[2] * lamda[2] + h_ratelo[2];
+  }
 }
 
 /* ----------------------------------------------------------------------
-   add back in velocity bias to all atoms removed by remove_bias_all()
-   assume remove_bias_all() was previously called
+   add back in deform velocity bias to all atoms removed by
+   remove_deform_bias_all()
+   assume remove_deform_bias_all() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempDeform::restore_bias_all()
+void ComputeTempDeform::restore_deform_bias_all()
 {
   double **v = atom->v;
   int *mask = atom->mask;
@@ -308,6 +358,29 @@ void ComputeTempDeform::restore_bias_all()
     }
 }
 
+/* ----------------------------------------------------------------------
+   add in deform velocity bias to all atoms based on x
+   does not require remove_deform_bias_all() to be previously called
+------------------------------------------------------------------------- */
+
+void ComputeTempDeform::apply_deform_bias_all()
+{
+  double **v = atom->v;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  double lamda[3];
+  double *h_rate = domain->h_rate;
+  double *h_ratelo = domain->h_ratelo;
+
+  for (int i = 0; i < nlocal; i++)
+    if (mask[i] & groupbit) {
+      domain->x2lamda(atom->x[i], lamda);
+      v[i][0] += h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
+      v[i][1] += h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
+      v[i][2] += h_rate[2] * lamda[2] + h_ratelo[2];
+    }
+}
 /* ---------------------------------------------------------------------- */
 
 double ComputeTempDeform::memory_usage()
