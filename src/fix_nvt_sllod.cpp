@@ -386,6 +386,7 @@ void FixNVTSllod::nve_x()
   }
 
   // x has changed, so can't just call restore_deform_bias_all
+  // pass in dtv to account for update to box shape
   if (!peculiar_flag && !nondeformbias)
-    dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all();
+    dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all(dtv);
 }

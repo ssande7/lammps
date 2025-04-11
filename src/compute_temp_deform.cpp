@@ -25,6 +25,7 @@
 #include "fix_nh.h"
 #include "fix_deform.h"
 #include "group.h"
+#include "math_extra.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -275,6 +276,7 @@ void ComputeTempDeform::remove_deform_bias_thr(int i, double *v, double *b)
 
 void ComputeTempDeform::remove_deform_bias_all()
 {
+  double **x = atom->x;
   double **v = atom->v;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
@@ -363,8 +365,9 @@ void ComputeTempDeform::restore_deform_bias_all()
    does not require remove_deform_bias_all() to be previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempDeform::apply_deform_bias_all()
+void ComputeTempDeform::apply_deform_bias_all(double dtv)
 {
+  double ** x = atom->x;
   double **v = atom->v;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
@@ -373,12 +376,42 @@ void ComputeTempDeform::apply_deform_bias_all()
   double *h_rate = domain->h_rate;
   double *h_ratelo = domain->h_ratelo;
 
+  // Box may not have been updated yet, so use flow tensor with real coords
+  double grad_u[6];
+  MathExtra::multiply_shape_shape(domain->h_rate,domain->h_inv,grad_u);
+  double xmid[3];
+  xmid[0] = (domain->boxhi[0] + domain->boxlo[0])/2.;
+  xmid[1] = (domain->boxhi[1] + domain->boxlo[1])/2.;
+  xmid[2] = (domain->boxhi[2] + domain->boxlo[2])/2.;
+  double xlo[3];
+  xlo[0] = domain->boxlo[0];
+  xlo[1] = domain->boxlo[1];
+  xlo[2] = domain->boxlo[2];
+
+  // If needed, integrate xlo and xmid to account for box not being updated yet
+  if (dtv != 0.0) {
+    double dtv2 = dtv * 0.5;
+    double xfac[3];
+    xfac[0] = exp(grad_u[0]*dtv2);
+    xfac[1] = exp(grad_u[1]*dtv2);
+    xfac[2] = exp(grad_u[2]*dtv2);
+
+    xlo[0] = xmid[0] + (xlo[0] - xmid[0])*xfac[0];
+    xlo[1] = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
+    xlo[2] = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
+    xmid[1] += dtv2 * grad_u[3]*(xmid[2] - xlo[2]);
+    xmid[0] += dtv * (grad_u[5]*(xmid[1] - xlo[1]) + grad_u[4]*(xmid[2] - xlo[2]));
+    xmid[1] += dtv2 * grad_u[3]*(xmid[2] - xlo[2]);
+    xlo[0] = xmid[0] + (xlo[0] - xmid[0])*xfac[0];
+    xlo[1] = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
+    xlo[2] = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
+  }
+
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
-      domain->x2lamda(atom->x[i], lamda);
-      v[i][0] += h_rate[0] * lamda[0] + h_rate[5] * lamda[1] + h_rate[4] * lamda[2] + h_ratelo[0];
-      v[i][1] += h_rate[1] * lamda[1] + h_rate[3] * lamda[2] + h_ratelo[1];
-      v[i][2] += h_rate[2] * lamda[2] + h_ratelo[2];
+      v[i][0] += (x[i][0] - xmid[0]) * grad_u[0] + (x[i][1] - xlo[1]) * grad_u[5] + (x[i][2] - xlo[2]) * grad_u[4];
+      v[i][1] += (x[i][1] - xmid[1]) * grad_u[1] + (x[i][2] - xlo[2]) * grad_u[3];
+      v[i][2] += (x[i][2] - xmid[2]) * grad_u[2];
     }
 }
 /* ---------------------------------------------------------------------- */
