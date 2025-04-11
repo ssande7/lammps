@@ -842,7 +842,7 @@ void FixDeform::apply_strain()
       double shift = 0.5 * ((set[i].hi_start - set[i].lo_start) * exp(set[i].rate * delt));
       set[i].lo_target = 0.5 * (set[i].lo_start + set[i].hi_start) - shift;
       set[i].hi_target = 0.5 * (set[i].lo_start + set[i].hi_start) + shift;
-      h_rate[i] = set[i].rate * domain->h[i];
+      h_rate[i] = set[i].rate * (set[i].hi_target - set[i].lo_target);
       h_ratelo[i] = -0.5 * h_rate[i];
     } else if (set[i].style == WIGGLE) {
       double delt = nsteps * dt;
