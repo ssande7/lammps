@@ -140,10 +140,6 @@ void FixNVTSllod::init()
         error->warning(FLERR,"fix {} requires box deformation to occur with "
             "position updates to be strictly correct. Set the N parameter of "
             "fix deform to 0 to enable this.", style);
-
-      if (!peculiar_flag)
-        error->warning(FLERR,"fix {} will produce incorrect energy dissipation "
-            "if the peculiar flag is not set", style);
     }
   }
 
