@@ -36,6 +36,7 @@ class FixNVTSllod : public FixNH {
   int kick_flag;      // 0 for no initial velocity kick, 1 for kick
 
   void nve_x() override;
+  int modify_param(int narg, char **arg) override;
 };
 
 }    // namespace LAMMPS_NS

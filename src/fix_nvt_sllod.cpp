@@ -252,3 +252,15 @@ void FixNVTSllod::nve_x()
   if (!peculiar_flag)
     dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all(dtv);
 }
+
+/* ---------------------------------------------------------------------- */
+
+int FixNVTSllod::modify_param(int narg, char **arg)
+{
+  if (strcmp(arg[0],"kick") == 0) {
+    if (narg < 2) error->all(FLERR,"Illegal fix_modify command");
+    kick_flag = utils::logical(FLERR,arg[1],false,lmp);
+    return 2;
+  }
+  return 0;
+}
