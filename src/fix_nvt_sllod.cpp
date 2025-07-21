@@ -48,6 +48,7 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
 
   psllod_flag = 0;
   peculiar_flag = 0;
+  kick_flag = 0;
   if (mtchain_default_flag) mtchain = 1;
 
   // select SLLOD/p-SLLOD/g-SLLOD variant and velocity frame
