@@ -388,23 +388,13 @@ void ComputeTempDeform::apply_deform_bias_all(double dtv)
   xlo[1] = domain->boxlo[1];
   xlo[2] = domain->boxlo[2];
 
-  // If needed, integrate xlo and xmid to account for box not being updated yet
+  // if needed, integrate xlo to account for box not being updated yet
+  // xmid does not change
   if (dtv != 0.0) {
-    double dtv2 = dtv * 0.5;
     double xfac[3];
-    xfac[0] = exp(grad_u[0]*dtv2);
-    xfac[1] = exp(grad_u[1]*dtv2);
-    xfac[2] = exp(grad_u[2]*dtv2);
-
-    xlo[0] = xmid[0] + (xlo[0] - xmid[0])*xfac[0];
-    xlo[1] = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
-    xlo[2] = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
-    xmid[1] += dtv2 * grad_u[3]*(xmid[2] - xlo[2]);
-    xmid[0] += dtv * (grad_u[5]*(xmid[1] - xlo[1]) + grad_u[4]*(xmid[2] - xlo[2]));
-    xmid[1] += dtv2 * grad_u[3]*(xmid[2] - xlo[2]);
-    xlo[0] = xmid[0] + (xlo[0] - xmid[0])*xfac[0];
-    xlo[1] = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
-    xlo[2] = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
+    xlo[0] = xmid[0] + (xlo[0] - xmid[0])*exp(grad_u[0]*dtv);
+    xlo[1] = xmid[1] + (xlo[1] - xmid[1])*exp(grad_u[1]*dtv);
+    xlo[2] = xmid[2] + (xlo[2] - xmid[2])*exp(grad_u[2]*dtv);
   }
 
   for (int i = 0; i < nlocal; i++)
