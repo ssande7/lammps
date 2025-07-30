@@ -657,11 +657,10 @@ void FixDeform::init()
   // VARIABLE for yz is error, since no way to calculate if box flip occurs
   // WIGGLE lo/hi flip test is on min/max oscillation limit, not tilt_stop
   // only trigger actual errors if flipflag is set
-  // ERATE is accounted for if xz is also ERATE and we don't need to remap
-  //   velocities, so allow in that case
+  // ERATE is accounted for if xz is also ERATE, so allow in that case
 
   if (set[3].style && set[5].style &&
-    !(set[3].style == ERATE && set[4].style == ERATE && remapflag != Domain::V_REMAP)
+    !(set[3].style == ERATE && set[4].style == ERATE) // && remapflag != Domain::V_REMAP)
   ) {
     int flag = 0;
     double lo,hi;
