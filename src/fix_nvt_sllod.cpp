@@ -262,5 +262,5 @@ int FixNVTSllod::modify_param(int narg, char **arg)
     kick_flag = utils::logical(FLERR,arg[1],false,lmp);
     return 2;
   }
-  return 0;
+  return FixNH::modify_param(narg, arg);
 }
