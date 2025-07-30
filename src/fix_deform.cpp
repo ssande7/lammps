@@ -726,6 +726,25 @@ void FixDeform::pre_exchange()
 {
   if (flip == 0) return;
 
+  // Account for effect of box flip on h_rate
+  for (int i = 3; i < 6; i++) {
+    if (set[i].style == ERATE) {
+      double arate = 0.0;
+      if (i == 3) {
+        if (set[1].style == TRATE) arate = set[1].rate;
+      }
+      if (i == 4) {
+        if (set[0].style == TRATE) arate = set[0].rate;
+      }
+      if (i == 5) {
+        if (set[0].style == TRATE) arate = set[0].rate;
+      }
+      h_rate[i] += arate * (set[i].tilt_flip - set[i].tilt_target);
+    }
+  }
+  if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE) {
+    h_rate[4] += set[5].rate*(set[3].tilt_flip - set[3].tilt_target);
+  }
   domain->yz = set[3].tilt_target = set[3].tilt_flip;
   domain->xz = set[4].tilt_target = set[4].tilt_flip;
   domain->xy = set[5].tilt_target = set[5].tilt_flip;
@@ -887,8 +906,9 @@ void FixDeform::apply_strain()
         set[i].tilt_target = set[i].tilt_start * exp(set[i].rate * delt);
         h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == ERATE) {
-        // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE.
-        // This is needed for SLLOD to be correct under mixed flow.
+        // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
+        // This is needed for correct velocity remapping and correct calculation of
+        //  the velocity gradient tensor from (h_rate * h_inv) under mixed flow.
         double delt = nsteps * dt;
         double arate = 0.0, brate = 0.0, h_bb;
         if (i == 3) {
@@ -1097,23 +1117,24 @@ void FixDeform::update_domain()
       if (set[i].style == TRATE) {
         h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == ERATE) {
-        // Solve ODE for a,b,c vectors accounting for elongation caused by TRATE.
-        // This is needed for SLLOD to be correct under mixed flow.
+        // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
+        // This is needed for correct velocity remapping and correct calculation of
+        //  the velocity gradient tensor from (h_rate * h_inv) under mixed flow.
         // TODO: do other elongation styles need to be accounted for where possible?
-        double delt = nsteps * dt;
-        double arate = 0.0;
+        double h_bb, arate = 0.0;
         if (i == 3) {
           if (set[1].style == TRATE) arate = set[1].rate;
-          h_rate[i] = set[i].rate * (set[2].hi_target - set[2].lo_target) + arate * set[i].tilt_target;
+          h_bb = set[2].hi_target - set[2].lo_target;
         }
         if (i == 4) {
           if (set[0].style == TRATE) arate = set[0].rate;
-          h_rate[i] = set[i].rate * (set[2].hi_target - set[2].lo_target) + arate * set[i].tilt_target;
+          h_bb = set[2].hi_target - set[2].lo_target;
         }
         if (i == 5) {
           if (set[0].style == TRATE) arate = set[0].rate;
-          h_rate[i] = set[i].rate * (set[1].hi_target - set[1].lo_target) + arate * set[i].tilt_target;
+          h_bb = set[1].hi_target - set[1].lo_target;
         }
+        h_rate[i] = set[i].rate * h_bb + arate * set[i].tilt_target;
       }
     }
     // TODO: use nearly_equal for check on set[5].rate?
