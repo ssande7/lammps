@@ -197,6 +197,12 @@ void FixNVTSllod::nve_x()
   }
   double *xlo = domain->boxlo;
 
+  // Propagate xlo for second half step
+  double xlo2[3];
+  xlo2[0] = xmid[0] + (xlo[0] - xmid[0])*xfac[0];
+  xlo2[1] = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
+  xlo2[2] = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
+
   for (int i = 0; i < nlocal; ++i) {
     if (mask[i] & groupbit) {
       // First half sllod update
@@ -224,8 +230,8 @@ void FixNVTSllod::nve_x()
       x[i][2] += dtv * v[i][2];
 
       // 2nd half sllod update
-      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo[1]) + grad_u[4]*(x[i][2] - xlo[2]));
-      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo[2]);
+      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo2[1]) + grad_u[4]*(x[i][2] - xlo2[2]));
+      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo2[2]);
       x[i][0] = xmid[0] + (x[i][0] - xmid[0])*xfac[0];
       x[i][1] = xmid[1] + (x[i][1] - xmid[1])*xfac[1];
       x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
