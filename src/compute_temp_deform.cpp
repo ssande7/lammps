@@ -114,9 +114,6 @@ void ComputeTempDeform::init()
   else which = FixNH::NOBIAS;
 
   vector = temperature->vector;
-
-  // Make sure dof_compute of temperature compute is called first
-  temperature->setup();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -132,6 +129,9 @@ void ComputeTempDeform::setup()
 
 void ComputeTempDeform::dof_compute()
 {
+  // Make sure dof_compute of temperature compute is called first
+  temperature->setup();
+
   adjust_dof_fix();
   natoms_temp = group->count(igroup);
   dof = temperature->dof;
@@ -391,7 +391,6 @@ void ComputeTempDeform::apply_deform_bias_all(double dtv)
   // if needed, integrate xlo to account for box not being updated yet
   // xmid does not change
   if (dtv != 0.0) {
-    double xfac[3];
     xlo[0] = xmid[0] + (xlo[0] - xmid[0])*exp(grad_u[0]*dtv);
     xlo[1] = xmid[1] + (xlo[1] - xmid[1])*exp(grad_u[1]*dtv);
     xlo[2] = xmid[2] + (xlo[2] - xmid[2])*exp(grad_u[2]*dtv);
