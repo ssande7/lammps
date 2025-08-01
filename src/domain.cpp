@@ -1928,6 +1928,39 @@ void Domain::unmap(const double *x, imageint image, double *y)
 }
 
 /* ----------------------------------------------------------------------
+   unmap the point via image flags, accounting for velocity change due
+    to deformation if needed based on mask
+   result returned in y, don't reset image flag
+   for triclinic, use h[] to add in tilt factors in other dims as needed
+------------------------------------------------------------------------- */
+
+void Domain::unmap(const double *x, const double *v, imageint image, int mask, double *y, double *vy)
+{
+  int xbox = (image & IMGMASK) - IMGMAX;
+  int ybox = (image >> IMGBITS & IMGMASK) - IMGMAX;
+  int zbox = (image >> IMG2BITS) - IMGMAX;
+
+  if (triclinic == 0) {
+    y[0] = x[0] + xbox*xprd;
+    y[1] = x[1] + ybox*yprd;
+    y[2] = x[2] + zbox*zprd;
+  } else {
+    y[0] = x[0] + h[0]*xbox + h[5]*ybox + h[4]*zbox;
+    y[1] = x[1] + h[1]*ybox + h[3]*zbox;
+    y[2] = x[2] + h[2]*zbox;
+  }
+
+  vy[0] = v[0];
+  vy[1] = v[1];
+  vy[2] = v[2];
+  if (deform_vremap && mask & deform_groupbit) {
+    vy[0] += h_rate[0] * xbox + h_rate[5] * ybox + h_rate[4] * zbox;
+    vy[1] += h_rate[1] * ybox + h_rate[3] * zbox;
+    vy[2] += h_rate[2] * zbox;
+  }
+}
+
+/* ----------------------------------------------------------------------
    adjust image flags due to triclinic box flip
    flip operation is changing box vectors A,B,C to new A',B',C'
      A' = A              (A does not change)
