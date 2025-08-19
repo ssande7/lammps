@@ -50,8 +50,8 @@ class ComputeTempDeform : public Compute {
   void restore_deform_bias_all();
   void apply_deform_bias_all(double dtv = 0.0);
 
-  class Compute* temperature; // Internal temperature compute
-  int which;                  // Whether internal temp compute has a bias
+  class Compute* temperature; // internal temperature compute
+  int which;                  // whether internal temp compute has a bias
 
  protected:
   char *id_temp;

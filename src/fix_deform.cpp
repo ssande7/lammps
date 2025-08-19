@@ -660,7 +660,7 @@ void FixDeform::init()
   // ERATE is accounted for if xz is also ERATE, so allow in that case
 
   if (set[3].style && set[5].style &&
-    !(set[3].style == ERATE && set[4].style == ERATE) // && remapflag != Domain::V_REMAP)
+    !(set[3].style == ERATE && set[4].style == ERATE)
   ) {
     int flag = 0;
     double lo,hi;
@@ -682,7 +682,7 @@ void FixDeform::init()
     }
   }
 
-  // Variables/computes may not be valid during post_integrate,
+  // variables/computes may not be valid during post_integrate,
   // so require end_flag for VARIABLE style
   if (!end_flag) {
     for (int i = 0; i < 6; ++i) {
@@ -725,7 +725,7 @@ void FixDeform::pre_exchange()
 {
   if (flip == 0) return;
 
-  // Account for effect of box flip on h_rate
+  // account for effect of box flip on h_rate
   for (int i = 3; i < 6; i++) {
     if (set[i].style == ERATE) {
       double arate = 0.0;
@@ -744,6 +744,7 @@ void FixDeform::pre_exchange()
   if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE) {
     h_rate[4] += set[5].rate*(set[3].tilt_flip - set[3].tilt_target);
   }
+
   domain->yz = set[3].tilt_target = set[3].tilt_flip;
   domain->xz = set[4].tilt_target = set[4].tilt_flip;
   domain->xy = set[5].tilt_target = set[5].tilt_flip;
@@ -780,40 +781,40 @@ void FixDeform::post_integrate()
 /* ---------------------------------------------------------------------- */
 
 void FixDeform::post_integrate_respa(int ilevel, int iloop) {
-  // Update box on RESPA level 0 since that is where x updates occur
+  // update box on RESPA level 0 since that is where x updates occur
   if (ilevel == 0) {
-    // Set correct number of timesteps and dt based on RESPA level.
-    // NOTE: This reduces the limit on the maximum number of timesteps by
-    // a factor of nloop0_respa (the total number of inner timesteps).
+    // set correct number of timesteps and dt based on RESPA level.
+    // NOTE: this reduces the limit on the maximum number of timesteps by
+    //  a factor of nloop0_respa (the total number of inner timesteps).
     nsteps = (update->ntimestep - 1 - update->beginstep)*nloop0_respa + iloop + 1;
     nsteps_total = (update->endstep - update->beginstep)*nloop0_respa;
     dt = step_respa[ilevel];
 
-    // Turn off k-space flag when calling update_box() to avoid
-    // unnecessary kspace->setup() calls
+    // turn off k-space flag when calling update_box() to avoid
+    //  unnecessary kspace->setup() calls
     int old_kspace_flag = kspace_flag;
     kspace_flag = 0;
     update_box();
     kspace_flag = old_kspace_flag;
 
   } else if (need_flip_change && ilevel == nlevels_respa-1) {
-    // Last step needed a box flip, so allow that now.
-    // Need to flip on outer level so that reneighbouring occurs.
-    // Don't change nsteps, nsteps_total, dt since positions haven't been
-    // integrated yet.
+    // last step needed a box flip, so allow that now.
+    // need to flip on outer level so that reneighbouring occurs.
+    // don't change nsteps, nsteps_total, dt since positions haven't been
+    //  integrated yet.
     allow_flip_change = 1;
     update_box();
     allow_flip_change = 0;
     need_flip_change = 0;
   }
 
-  // Box is changing every inner step, so kspace->setup() must be called
-  // on kspace level
+  // box is changing every inner step, so kspace->setup() must be called
+  //  on kspace level
   if (kspace_flag && ilevel == kspace_level_respa) force->kspace->setup();
 }
 
 /* ----------------------------------------------------------------------
-   Update the box
+   update the box
  ---------------------------------------------------------------------- */
 void FixDeform::update_box()
 {
@@ -905,8 +906,8 @@ void FixDeform::apply_strain()
         set[i].tilt_target = set[i].tilt_start * exp(set[i].rate * delt);
         h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == ERATE) {
-        // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
-        // This is needed for correct velocity remapping and correct calculation of
+        // solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
+        // this is needed for correct velocity remapping and correct calculation of
         //  the velocity gradient tensor from (h_rate * h_inv) under mixed flow.
         double delt = nsteps * dt;
         double arate = 0.0, brate = 0.0, h_bb;
@@ -955,7 +956,7 @@ void FixDeform::apply_strain()
       }
     }
 
-    // Correct for effects of deformation on xz tilt
+    // correct for effects of deformation on xz tilt
     if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
       set[4].tilt_target += calc_xz_correction(nsteps * dt);
   }
@@ -1057,9 +1058,9 @@ void FixDeform::update_domain()
         set[5].tilt_target * xprdinv < -0.5 ||
         set[5].tilt_target * xprdinv > 0.5) {
       if (!allow_flip_change) {
-        // For rRESPA, can only flip in outer timestep, but could be integrating
-        // in inner timestep. Just flag to calculate new box in outer rRESPA
-        // level of next timestep.
+        // for rRESPA, can only flip in outer timestep, but could be integrating
+        //  in inner timestep, so flag to calculate new box in outer rRESPA
+        //  level of next timestep.
         need_flip_change = 1;
 
       } else {
@@ -1106,9 +1107,9 @@ void FixDeform::update_domain()
     }
   }
 
-  // For styles with h_rate dependence on xy/xz/yz, need to set h_rate after
-  // box flips so that the correct streaming velocity can be recovered by
-  // fix nvt/sllod
+  // for styles with h_rate dependence on xy/xz/yz, need to set h_rate after
+  //  box flips so that the correct streaming velocity can be recovered by
+  //  fix nvt/sllod and compute temp/deform
   if (triclinic) {
     double *h = domain->h;
 
@@ -1116,8 +1117,8 @@ void FixDeform::update_domain()
       if (set[i].style == TRATE) {
         h_rate[i] = set[i].rate * domain->h[i];
       } else if (set[i].style == ERATE) {
-        // Solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
-        // This is needed for correct velocity remapping and correct calculation of
+        // solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
+        // this is needed for correct velocity remapping and correct calculation of
         //  the velocity gradient tensor from (h_rate * h_inv) under mixed flow.
         // TODO: do other elongation styles need to be accounted for where possible?
         double h_bb, arate = 0.0;
@@ -1185,15 +1186,16 @@ void FixDeform::update_domain()
 }
 
 /* ----------------------------------------------------------------------
-   Calculate correction to xz tilt due to xy shear with yz tilt.
+   calculate correction to xz tilt due to xy shear with yz tilt.
    NOTE: only considers xx, yy, zz deformation with TRATE
-         and xy, xz, yz with ERATE. (i.e. constant flow tensor)
-   Non-zero xy rate and xz.style == ERATE is assumed.
-   Requires xz style of ERATE. If xz style is NONE then changes aren't
-   tracked properly (e.g. if there is pressure control on the xz tilt).
+    and xy, xz, yz with ERATE. (i.e. constant velocity gradient tensor)
+   assumes non-zero xy rate and xz.style == ERATE.
+   requires xz style of ERATE. If xz style is NONE then changes aren't
+    tracked properly (e.g. if there is pressure control on the xz tilt).
 ------------------------------------------------------------------------- */
 double FixDeform::calc_xz_correction(double delt) {
-  // Solve ODE for xy component of xz tilt factor
+  // solve ODE for xy component of xz tilt factor
+  // TODO: use nearly_equal when checking for 0?
   double g_xy = set[5].rate;
   double g_yz = set[3].rate;
   double h_yz0 = set[3].tilt_start;
@@ -1207,28 +1209,28 @@ double FixDeform::calc_xz_correction(double delt) {
       if (e_xx == 0.0) {
         if (e_yy == 0.0) {
           // e_xx = e_yy = e_zz = 0
-          // (Pure shear)
+          // (pure shear)
           return g_xy * (h_yz0 * delt + 0.5 * g_yz * h_zz0 * delt * delt);
         } else {
           // e_xx = e_zz = 0, e_yy != 0
-          // (Shear + y extension - non vol. preserving)
+          // (shear + y extension - non vol. preserving)
           double yyfac = (exp(e_yy * delt) - 1.0) / e_yy;
           return g_xy * g_yz * h_zz0 / e_yy * (yyfac - delt) + g_xy * h_yz0 * yyfac;
         }
       } else {
         if(e_yy == 0.0) {
           // e_xx = e_zz != 0, e_yy = 0
-          // (Shear + xz extension - non vol. preserving)
+          // (shear + x,z extension - non vol. preserving)
           double xfac = exp(e_xx*delt);
           return g_xy * g_yz * h_zz0 / e_zz * (delt * xfac - (xfac - 1.0) / e_xx)
                  + g_xy * h_yz0 * ((xfac - 1.0) / e_xx);
         } else if (e_yy == e_zz) {
           // e_xx = e_yy = e_zz != 0
-          // (Shear + xyz extension - non vol. preserving)
+          // (shear + x,y,z extension - non vol. preserving)
           return g_xy * (h_yz0 * delt + 0.5 * g_xy * g_yz * h_zz0 * delt * delt) * exp(e_xx * delt);
         } else {
           // e_xx = e_zz != 0, e_yy != e_xx, e_yy != 0
-          // (Shear + xyz extension - possibly vol. preserving)
+          // (shear + x,y,z extension - possibly vol. preserving)
           double xfac = exp(e_xx * delt);
           double yfac = exp(e_yy * delt);
           double xyfac = (yfac - xfac) / (e_yy - e_xx);
@@ -1239,18 +1241,18 @@ double FixDeform::calc_xz_correction(double delt) {
     } else if (e_xx == 0.0) {
       if (e_yy == 0.0) {
         // e_xx = e_yy = 0, e_zz != 0
-        // (Shear + z extension - non vol. preserving)
+        // (shear + z extension - non vol. preserving)
         return g_xy * g_yz * h_zz0 / e_zz * ((exp(e_zz * delt) - 1.0) / e_zz - delt)
                + g_xy * h_yz0 * delt;
       } else if (e_yy == e_zz) {
         // e_xx = 0, e_yy = e_zz != 0
-        // (Shear + yz extension - non vol. preserving)
+        // (shear + y,z extension - non vol. preserving)
         double yfac = exp(e_yy*delt);
         return g_xy * g_yz * h_zz0 / e_yy * (delt * yfac - (yfac - 1.0) / e_yy)
                + g_xy * h_yz0 * ((yfac - 1.0) / e_yy);
       } else {
         // e_xx = 0, e_yy != 0, e_zz != 0, e_yy != e_zz
-        // (Shear + yz extension - possibly vol. preserving)
+        // (shear + y,z extension - possibly vol. preserving)
         double yfac = (exp(e_yy * delt) - 1.0) / e_yy;
         return g_xy * g_yz * h_zz0 / (e_zz - e_yy) * ((exp(e_zz) - 1.0) / e_zz - yfac)
                + g_xy*h_yz0*yfac;
@@ -1258,18 +1260,18 @@ double FixDeform::calc_xz_correction(double delt) {
     } else if (e_zz == 0.0) {
       if (e_yy == 0.0) {
         // e_xx != 0, e_yy = e_zz = 0
-        // (Shear + x extension - non vol. preserving)
+        // (shear + x extension - non vol. preserving)
         double xfac = (exp(e_xx * delt) - 1.0) / e_xx;
         return g_xy * g_yz * h_zz0 / e_xx * (xfac - delt) + g_xy * h_yz0 * xfac;
       } else if (e_xx == e_yy) {
         // e_xx = e_yy != 0, e_zz = 0
-        // (Shear + xy extension - non vol. preserving)
+        // (shear + x,y extension - non vol. preserving)
         double xfac = exp(e_xx * delt);
         return g_xy * g_yz / e_xx * ((1.0 - xfac) / e_xx + delt * xfac)
                + g_xy * h_yz0 * (delt * xfac);
       } else {
         // e_xx != 0, e_yy != 0, e_xx != e_yy, e_zz = 0
-        // (Shear + xy extension - possibly vol. preserving)
+        // (shear + x,y extension - possibly vol. preserving)
         double xfac = exp(e_xx * delt);
         double yfac = exp(e_yy * delt);
         double xyfac = (yfac - xfac) / (e_yy - e_xx);
@@ -1279,14 +1281,14 @@ double FixDeform::calc_xz_correction(double delt) {
     } else {
       if (e_yy == 0.0) {
         // e_xx != 0, e_zz != 0, e_xx != e_zz, e_yy = 0
-        // (Shear + xz extension - possibly vol. preserving)
+        // (shear + x,z extension - possibly vol. preserving)
         double xfac = exp(e_xx * delt);
         double zfac = exp(e_zz * delt);
         return g_xy * g_yz * h_zz0 / e_zz * ((zfac - xfac) / (e_zz - e_xx)
                + (1.0 - xfac) / e_xx) + g_xy * h_yz0 * ((1.0 - xfac) / e_xx);
       } else if (e_yy == e_zz) {
         // e_xx != 0, e_yy != 0, e_zz = e_yy, e_xx != e_zz
-        // (Shear + xyz extension - possibly vol. preserving)
+        // (shear + x,y,z extension - possibly vol. preserving)
         double xfac = exp(e_xx*delt);
         double yfac = exp(e_yy*delt);
         double xyfac = (yfac - xfac) / (e_yy - e_xx);
@@ -1294,14 +1296,14 @@ double FixDeform::calc_xz_correction(double delt) {
                + g_xy * h_yz0 * xyfac;
       } else if (e_yy == e_xx) {
         // e_xx != 0, e_yy = e_xx, e_zz != 0, e_xx != e_zz
-        // (Shear + xyz extension - possibly vol. preserving)
+        // (shear + x,y,z extension - possibly vol. preserving)
         double xfac = exp(e_xx * delt);
         double zfac = exp(e_zz * delt);
         return g_xy * g_yz * h_zz0 / (e_zz - e_yy) * ((zfac - xfac) / (e_zz - e_xx)
                - delt * xfac) + g_xy * h_yz0 * (delt * xfac);
       } else {
         // e_xx != 0, e_yy != 0, e_zz != 0, e_xx != e_zz, e_xx != e_yy, e_yy != e_zz
-        // (Shear + xyz extension - possibly vol. preserving)
+        // (shear + x,y,z extension - possibly vol. preserving)
         double xfac = exp(e_xx * delt);
         double yfac = exp(e_yy * delt);
         double zfac = exp(e_zz * delt);

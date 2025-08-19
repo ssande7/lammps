@@ -90,7 +90,7 @@ class FixDeform : public Fix {
   void update_domain();
   double calc_xz_correction(double);
 
-  // Allow fix nvt/sllod to check deform parameters for correctness
+  // allow fix nvt/sllod to check deform parameters for correctness
   friend class FixNVTSllod;
 };
 

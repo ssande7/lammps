@@ -95,7 +95,7 @@ void ComputeTempDeform::init()
   } else
     error->warning(FLERR, "Using compute temp/deform with no fix deform defined");
 
-  // Check internal temperature compute
+  // check internal temperature compute
 
   temperature = modify->get_compute_by_id(id_temp);
   if (!temperature)
@@ -105,7 +105,7 @@ void ComputeTempDeform::init()
   if (temperature->igroup != igroup)
     error->all(FLERR,"Group of temperature compute with ID {} for compute temp/deform does not match", id_temp);
 
-  // Avoid possibility of self-referential loop
+  // avoid possibility of self-referential loop
 
   if (strcmp(temperature->style, "temp/deform")==0)
     error->all(FLERR,"Compute temp/deform temperature ID {} cannot be of style temp/deform", id_temp);
@@ -114,6 +114,11 @@ void ComputeTempDeform::init()
   else which = FixNH::NOBIAS;
 
   vector = temperature->vector;
+
+  // make sure internal temperature compute is called first
+
+  temperature->init();
+  temperature->setup();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -129,9 +134,6 @@ void ComputeTempDeform::setup()
 
 void ComputeTempDeform::dof_compute()
 {
-  // Make sure dof_compute of temperature compute is called first
-  temperature->setup();
-
   adjust_dof_fix();
   natoms_temp = group->count(igroup);
   dof = temperature->dof;
@@ -145,6 +147,7 @@ double ComputeTempDeform::compute_scalar()
 
   remove_deform_bias_all();
   scalar = temperature->compute_scalar();
+  if (dynamic) dof = temperature->dof;
   restore_deform_bias_all();
 
   return scalar;
@@ -158,6 +161,7 @@ void ComputeTempDeform::compute_vector()
 
   remove_deform_bias_all();
   temperature->compute_vector();
+  if (dynamic) dof = temperature->dof;
   restore_deform_bias_all();
 }
 
@@ -225,7 +229,7 @@ void ComputeTempDeform::restore_bias_all()
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I due to deformation
+   remove velocity bias from atom I due to deformation only
 ------------------------------------------------------------------------- */
 
 void ComputeTempDeform::remove_deform_bias(int i, double *v)
@@ -244,7 +248,7 @@ void ComputeTempDeform::remove_deform_bias(int i, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I due to deformation
+   remove velocity bias from atom I due to deformation only
 ------------------------------------------------------------------------- */
 
 void ComputeTempDeform::remove_deform_bias_thr(int i, double *v, double *b)
@@ -305,7 +309,7 @@ void ComputeTempDeform::remove_deform_bias_all()
 
 /* ----------------------------------------------------------------------
    add back in velocity bias to atom I removed by remove_deform_bias()
-   assume remove_bias() was previously called
+   assume remove_deform_bias() was previously called
 ------------------------------------------------------------------------- */
 
 void ComputeTempDeform::restore_deform_bias(int /*i*/, double *v)
@@ -372,10 +376,6 @@ void ComputeTempDeform::apply_deform_bias_all(double dtv)
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 
-  double lamda[3];
-  double *h_rate = domain->h_rate;
-  double *h_ratelo = domain->h_ratelo;
-
   // Box may not have been updated yet, so use flow tensor with real coords
   double grad_u[6];
   MathExtra::multiply_shape_shape(domain->h_rate,domain->h_inv,grad_u);
@@ -383,23 +383,16 @@ void ComputeTempDeform::apply_deform_bias_all(double dtv)
   xmid[0] = (domain->boxhi[0] + domain->boxlo[0])/2.;
   xmid[1] = (domain->boxhi[1] + domain->boxlo[1])/2.;
   xmid[2] = (domain->boxhi[2] + domain->boxlo[2])/2.;
-  double xlo[3];
-  xlo[0] = domain->boxlo[0];
-  xlo[1] = domain->boxlo[1];
-  xlo[2] = domain->boxlo[2];
 
-  // if needed, integrate xlo to account for box not being updated yet
+  // if needed, integrate boxlo to account for box not being updated yet
   // xmid does not change
-  if (dtv != 0.0) {
-    xlo[0] = xmid[0] + (xlo[0] - xmid[0])*exp(grad_u[0]*dtv);
-    xlo[1] = xmid[1] + (xlo[1] - xmid[1])*exp(grad_u[1]*dtv);
-    xlo[2] = xmid[2] + (xlo[2] - xmid[2])*exp(grad_u[2]*dtv);
-  }
+  double ylo = xmid[1] + (domain->boxlo[1] - xmid[1])*exp(grad_u[1]*dtv);
+  double zlo = xmid[2] + (domain->boxlo[2] - xmid[2])*exp(grad_u[2]*dtv);
 
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
-      v[i][0] += (x[i][0] - xmid[0]) * grad_u[0] + (x[i][1] - xlo[1]) * grad_u[5] + (x[i][2] - xlo[2]) * grad_u[4];
-      v[i][1] += (x[i][1] - xmid[1]) * grad_u[1] + (x[i][2] - xlo[2]) * grad_u[3];
+      v[i][0] += (x[i][0] - xmid[0]) * grad_u[0] + (x[i][1] - ylo) * grad_u[5] + (x[i][2] - zlo) * grad_u[4];
+      v[i][1] += (x[i][1] - xmid[1]) * grad_u[1] + (x[i][2] - zlo) * grad_u[3];
       v[i][2] += (x[i][2] - xmid[2]) * grad_u[2];
     }
 }

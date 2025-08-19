@@ -48,7 +48,7 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
 
   psllod_flag = 0;
   peculiar_flag = 0;
-  kick_flag = 0;
+  bool user_kick = false;
   if (mtchain_default_flag) mtchain = 1;
 
   // select SLLOD/p-SLLOD/g-SLLOD variant and velocity frame
@@ -67,9 +67,13 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg],"kick") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "fix nvt/sllod kick", error);
       kick_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
+      user_kick = true;
       iarg += 2;
     } else iarg++;
   }
+
+  // default to applying velocity kick in lab frame
+  if (!user_kick) kick_flag = !peculiar_flag;
 
   // create a new compute temp style
   // id = fix-ID + temp
@@ -110,11 +114,13 @@ void FixNVTSllod::init()
 
     // error on unsupported mixed flows
     bool elongation = false;
-    for (int j = 0; j < 3; ++j) {
-      if (f->set[j].style) {
-        elongation = true;
-        if (f->set[j].style != FixDeform::TRATE)
-          error->all(FLERR,"fix {} requires the trate style for x,y,z deformation", style);
+    if (comm->me == 0) {
+      for (int j = 0; j < 3; ++j) {
+        if (f->set[j].style) {
+          elongation = true;
+          if (f->set[j].style != FixDeform::TRATE)
+            error->warning(FLERR,"fix {} expects the trate style for x/y/z deformation", style);
+        }
       }
     }
     for (int j = 3; j < 6; ++j) {
@@ -126,8 +132,7 @@ void FixNVTSllod::init()
       }
     }
     if (comm->me == 0) {
-      // Warn about fix deform settings that do not produce a constant flow tensor
-      // No need to warn about xy + yz shear since this is handled in fix deform
+      // warn about fix deform settings that do not produce a constant flow tensor
       if (f->set[5].style && f->set[5].rate != 0.0 &&
           (f->set[3].style || domain->yz != 0.0) &&
           (f->set[4].style != FixDeform::ERATE ||
@@ -143,12 +148,14 @@ void FixNVTSllod::init()
   }
 
   if (kick_flag) {
-    // Apply initial kick if velocity stored in lab frame.
+    // apply initial kick if velocity stored in lab frame
+    // only kick once by default for correct dynamics with multiple run commands
     if (!peculiar_flag) {
       dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all();
+      kick_flag = 0;
     } else if (comm->me == 0) {
-      error->warning(FLERR,"fix nvt/sllod using peculiar-frame velocity or "
-                     "non-deform bias. Ignoring kick flag.");
+      error->warning(FLERR,"fix nvt/sllod using peculiar frame velocity. "
+                     "Ignoring kick flag.");
     }
   }
 }
@@ -170,8 +177,8 @@ void FixNVTSllod::nve_x()
   // x update by full step only for atoms in group
   // identical for SLLOD and p-SLLOD
   // velocity treated in peculiar frame relative to sllod streaming for
-  //   reversibility, so need to manually account for change in streaming
-  //   velocity
+  //  reversibility, so need to manually account for change in streaming
+  //  velocity
 
   double dtv2 = dtv*0.5;
   double grad_u[6], xfac[3];
@@ -187,8 +194,8 @@ void FixNVTSllod::nve_x()
   if (!peculiar_flag)
     dynamic_cast<ComputeTempDeform*>(temperature)->remove_deform_bias_all();
 
-  // Fix deform keeps the box center fixed under elongation,
-  // and the lower corner fixed under shear, so adjust for that
+  // fix deform uses the box center as origin for elongation,
+  // and the lower corner for shear, so adjust for that
   // to avoid an apparent drift relative to the box and prevent
   // extra atom exchanges between MPI ranks
   double xmid[3];
@@ -197,15 +204,14 @@ void FixNVTSllod::nve_x()
   }
   double *xlo = domain->boxlo;
 
-  // Propagate xlo for second half step
-  double xlo2[3];
-  xlo2[0] = xmid[0] + (xlo[0] - xmid[0])*xfac[0];
-  xlo2[1] = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
-  xlo2[2] = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
+  // propagate boxlo to make second half step reversible
+  // xmid does not change
+  double ylo2 = xmid[1] + (xlo[1] - xmid[1])*xfac[1];
+  double zlo2 = xmid[2] + (xlo[2] - xmid[2])*xfac[2];
 
   for (int i = 0; i < nlocal; ++i) {
     if (mask[i] & groupbit) {
-      // First half sllod update
+      // first half sllod update
       v[i][0] *= vfac[0];
       v[i][1] *= vfac[1];
       v[i][2] *= vfac[2];
@@ -225,19 +231,20 @@ void FixNVTSllod::nve_x()
       x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo[2]);
       x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo[1]) + grad_u[4]*(x[i][2] - xlo[2]));
 
+      // nve position update
       x[i][0] += dtv * v[i][0];
       x[i][1] += dtv * v[i][1];
       x[i][2] += dtv * v[i][2];
 
       // 2nd half sllod update
-      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo2[1]) + grad_u[4]*(x[i][2] - xlo2[2]));
-      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo2[2]);
+      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - ylo2) + grad_u[4]*(x[i][2] - zlo2));
+      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - zlo2);
       x[i][0] = xmid[0] + (x[i][0] - xmid[0])*xfac[0];
       x[i][1] = xmid[1] + (x[i][1] - xmid[1])*xfac[1];
       x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
 
-      // Second half sllod velocity step here so streaming component
-      // matches x when storing in lab frame
+      // second half sllod velocity step
+      // apply here so streaming component matches x when storing in lab frame
       if (psllod_flag) {
         v[i][0] -= dtv2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
                    + dtv2*grad_u[0]*grad_u[0]*x[i][0];
