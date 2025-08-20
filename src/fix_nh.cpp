@@ -355,7 +355,7 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg],"ext") == 0) {
       iarg += 2;
 
-    // keywords psllod and peculiar are parsed in fix/nvt/sllod
+    // keywords psllod, peculiar and kick are parsed in fix/nvt/sllod
 
     } else if (strcmp(arg[iarg],"psllod") == 0) {
       iarg += 2;
