@@ -61,8 +61,6 @@ class FixDeform : public Fix {
   bigint nsteps, nsteps_total;
   double dt;
 
-  double TWOPI;
-
   struct Set {
     int style, substyle;
     double flo, fhi, ftilt;
