@@ -42,6 +42,8 @@ class FixNH : public Fix {
   void *extract(const char *, int &) override;
   double memory_usage() override;
 
+  enum{NOBIAS,BIAS};
+
  protected:
   int dimension, which;
   double dtv, dtf, dthalf, dt4, dt8, dto;

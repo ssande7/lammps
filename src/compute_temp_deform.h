@@ -28,6 +28,7 @@ class ComputeTempDeform : public Compute {
  public:
   ComputeTempDeform(class LAMMPS *, int, char **);
   ~ComputeTempDeform() override;
+  void post_constructor() override;
   void init() override;
   void setup() override;
   double compute_scalar() override;
@@ -41,8 +42,20 @@ class ComputeTempDeform : public Compute {
   void restore_bias_all() override;
   double memory_usage() override;
 
+  void remove_deform_bias(int, double *);
+  void remove_deform_bias_thr(int, double *, double *);
+  void remove_deform_bias_all();
+  void restore_deform_bias(int, double *);
+  void restore_deform_bias_thr(int, double *, double *);
+  void restore_deform_bias_all();
+  void apply_deform_bias_all(double dtv = 0.0);
+
+  class Compute* temperature; // internal temperature compute
+  int which;                  // whether internal temp compute has a bias
+
  protected:
-  double tfactor;
+  char *id_temp;
+  int tcomputeflag; // 1 = internal temp compute created by this compute
 
   virtual void dof_compute();
 };
