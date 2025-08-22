@@ -180,16 +180,15 @@ void FixNVTSllod::nve_x()
   //  reversibility, so need to manually account for change in streaming
   //  velocity
 
-  double dtv2 = dtv*0.5;
   double grad_u[6], xfac[3];
   MathExtra::multiply_shape_shape(domain->h_rate, domain->h_inv, grad_u);
-  xfac[0] = exp(grad_u[0]*dtv2);
-  xfac[1] = exp(grad_u[1]*dtv2);
-  xfac[2] = exp(grad_u[2]*dtv2);
+  xfac[0] = exp(grad_u[0]*dthalf);
+  xfac[1] = exp(grad_u[1]*dthalf);
+  xfac[2] = exp(grad_u[2]*dthalf);
   double vfac[3];
-  vfac[0] = exp(-grad_u[0]*dtv2);
-  vfac[1] = exp(-grad_u[1]*dtv2);
-  vfac[2] = exp(-grad_u[2]*dtv2);
+  vfac[0] = exp(-grad_u[0]*dthalf);
+  vfac[1] = exp(-grad_u[1]*dthalf);
+  vfac[2] = exp(-grad_u[2]*dthalf);
 
   if (!peculiar_flag)
     dynamic_cast<ComputeTempDeform*>(temperature)->remove_deform_bias_all();
@@ -216,20 +215,20 @@ void FixNVTSllod::nve_x()
       v[i][1] *= vfac[1];
       v[i][2] *= vfac[2];
       if (psllod_flag) {
-        v[i][2] -= dtv2*grad_u[2]*grad_u[2]*x[i][2];
-        v[i][1] -= dtv2*grad_u[3]*v[i][2] + dtv2*grad_u[1]*grad_u[1]*x[i][1];
-        v[i][0] -= dtv2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
-                   + dtv2*grad_u[0]*grad_u[0]*x[i][0];
+        v[i][2] -= dthalf*grad_u[2]*grad_u[2]*x[i][2];
+        v[i][1] -= dthalf*grad_u[3]*v[i][2] + dthalf*grad_u[1]*grad_u[1]*x[i][1];
+        v[i][0] -= dthalf*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                   + dthalf*grad_u[0]*grad_u[0]*x[i][0];
       } else {
-        v[i][1] -= dtv2*grad_u[3]*v[i][2];
-        v[i][0] -= dtv2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+        v[i][1] -= dthalf*grad_u[3]*v[i][2];
+        v[i][0] -= dthalf*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
       }
 
       x[i][0] = xmid[0] + (x[i][0] - xmid[0])*xfac[0];
       x[i][1] = xmid[1] + (x[i][1] - xmid[1])*xfac[1];
       x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
-      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - xlo[2]);
-      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - xlo[1]) + grad_u[4]*(x[i][2] - xlo[2]));
+      x[i][1] += dthalf * grad_u[3]*(x[i][2] - xlo[2]);
+      x[i][0] += dthalf * (grad_u[5]*(x[i][1] - xlo[1]) + grad_u[4]*(x[i][2] - xlo[2]));
 
       // nve position update
       x[i][0] += dtv * v[i][0];
@@ -237,8 +236,8 @@ void FixNVTSllod::nve_x()
       x[i][2] += dtv * v[i][2];
 
       // 2nd half sllod update
-      x[i][0] += dtv2 * (grad_u[5]*(x[i][1] - ylo2) + grad_u[4]*(x[i][2] - zlo2));
-      x[i][1] += dtv2 * grad_u[3]*(x[i][2] - zlo2);
+      x[i][0] += dthalf * (grad_u[5]*(x[i][1] - ylo2) + grad_u[4]*(x[i][2] - zlo2));
+      x[i][1] += dthalf * grad_u[3]*(x[i][2] - zlo2);
       x[i][0] = xmid[0] + (x[i][0] - xmid[0])*xfac[0];
       x[i][1] = xmid[1] + (x[i][1] - xmid[1])*xfac[1];
       x[i][2] = xmid[2] + (x[i][2] - xmid[2])*xfac[2];
@@ -246,13 +245,13 @@ void FixNVTSllod::nve_x()
       // second half sllod velocity step
       // apply here so streaming component matches x when storing in lab frame
       if (psllod_flag) {
-        v[i][0] -= dtv2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
-                   + dtv2*grad_u[0]*grad_u[0]*x[i][0];
-        v[i][1] -= dtv2*grad_u[3]*v[i][2] + dtv2*grad_u[1]*grad_u[1]*x[i][1];
-        v[i][2] -= dtv2*grad_u[2]*grad_u[2]*x[i][2];
+        v[i][0] -= dthalf*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2])
+                   + dthalf*grad_u[0]*grad_u[0]*x[i][0];
+        v[i][1] -= dthalf*grad_u[3]*v[i][2] + dthalf*grad_u[1]*grad_u[1]*x[i][1];
+        v[i][2] -= dthalf*grad_u[2]*grad_u[2]*x[i][2];
       } else {
-        v[i][0] -= dtv2*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
-        v[i][1] -= dtv2*grad_u[3]*v[i][2];
+        v[i][0] -= dthalf*(grad_u[5]*v[i][1] + grad_u[4]*v[i][2]);
+        v[i][1] -= dthalf*grad_u[3]*v[i][2];
       }
       v[i][0] *= vfac[0];
       v[i][1] *= vfac[1];
