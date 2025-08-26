@@ -28,6 +28,7 @@
 #include "group.h"
 #include "math_extra.h"
 #include "modify.h"
+#include "utils.h"
 
 #include <cstring>
 
@@ -145,18 +146,23 @@ void FixNVTSllod::init()
             "position updates to be strictly correct. Set the N parameter of "
             "fix deform to 0 to enable this.", style);
     }
-  }
 
-  if (kick_flag) {
-    // apply initial kick if velocity stored in lab frame
-    // only kick once by default for correct dynamics with multiple run commands
-    if (!peculiar_flag) {
-      dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all();
-      kick_flag = 0;
-    } else if (comm->me == 0) {
-      error->warning(FLERR,"fix nvt/sllod using peculiar frame velocity. "
-                     "Ignoring kick flag.");
+    if (kick_flag) {
+      // apply initial kick if velocity stored in lab frame
+      // only kick once by default for correct dynamics with multiple run commands
+      // make sure fix deform init happens first so h_rate is set
+      if (!peculiar_flag) {
+        f->init();
+        utils::logmesg(lmp, "fix {} applying velocity profile kick.\n", style);
+        dynamic_cast<ComputeTempDeform*>(temperature)->apply_deform_bias_all();
+        kick_flag = 0;
+      } else if (comm->me == 0) {
+        error->warning(FLERR,"fix {} using peculiar frame velocity. "
+                       "Ignoring kick flag.", style);
+      }
     }
+
+    break;
   }
 }
 
