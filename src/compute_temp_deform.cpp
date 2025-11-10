@@ -57,7 +57,6 @@ ComputeTempDeform::ComputeTempDeform(LAMMPS *lmp, int narg, char **arg) :
 
   maxbias = 0;
   vbiasall = nullptr;
-  vector = new double[size_vector];
 }
 
 /* ---------------------------------------------------------------------- */
