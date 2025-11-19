@@ -1934,7 +1934,7 @@ void Domain::unmap(const double *x, imageint image, double *y)
    for triclinic, use h[] to add in tilt factors in other dims as needed
 ------------------------------------------------------------------------- */
 
-void Domain::unmap(const double *x, const double *v, imageint image, int mask, double *y, double *vy)
+void Domain::unmap(const double *x, const double *v, imageint image, int mask, double *y, double *u)
 {
   int xbox = (image & IMGMASK) - IMGMAX;
   int ybox = (image >> IMGBITS & IMGMASK) - IMGMAX;
@@ -1950,13 +1950,13 @@ void Domain::unmap(const double *x, const double *v, imageint image, int mask, d
     y[2] = x[2] + h[2]*zbox;
   }
 
-  vy[0] = v[0];
-  vy[1] = v[1];
-  vy[2] = v[2];
+  u[0] = v[0];
+  u[1] = v[1];
+  u[2] = v[2];
   if (deform_vremap && mask & deform_groupbit) {
-    vy[0] += h_rate[0] * xbox + h_rate[5] * ybox + h_rate[4] * zbox;
-    vy[1] += h_rate[1] * ybox + h_rate[3] * zbox;
-    vy[2] += h_rate[2] * zbox;
+    u[0] += h_rate[0] * xbox + h_rate[5] * ybox + h_rate[4] * zbox;
+    u[1] += h_rate[1] * ybox + h_rate[3] * zbox;
+    u[2] += h_rate[2] * zbox;
   }
 }
 

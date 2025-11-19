@@ -864,6 +864,7 @@ void FixDeform::apply_strain()
       double shift = 0.5 * ((set[i].hi_start - set[i].lo_start) * exp(set[i].rate * delt));
       set[i].lo_target = 0.5 * (set[i].lo_start + set[i].hi_start) - shift;
       set[i].hi_target = 0.5 * (set[i].lo_start + set[i].hi_start) + shift;
+      // use hi_target - lo_target so that h_rate is consistent with h after update
       h_rate[i] = set[i].rate * (set[i].hi_target - set[i].lo_target);
       h_ratelo[i] = -0.5 * h_rate[i];
     } else if (set[i].style == WIGGLE) {
@@ -1034,7 +1035,42 @@ void FixDeform::update_domain()
         if (i == 3) set[4].tilt_target -= set[5].tilt_target;
       }
     }
+
+
+    // for styles with h_rate dependence on xy/xz/yz, need to set h_rate after
+    //  tilt adjustments so that the correct streaming velocity can be recovered by
+    //  fix nvt/sllod and compute temp/deform
+    // effects of box flip handled in pre_exchange so h_rate stays in sync with h
+
+    for (int i = 3; i < 6; i++) {
+      if (set[i].style == TRATE) {
+        h_rate[i] = set[i].rate * domain->h[i];
+      } else if (set[i].style == ERATE) {
+        // solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
+        // this is needed for correct velocity remapping and correct calculation of
+        //  the velocity gradient tensor from (h_rate * h_inv) under mixed flow.
+        // TODO: do other elongation styles need to be accounted for where possible?
+        double h_bb, arate = 0.0;
+        if (i == 3) {
+          if (set[1].style == TRATE) arate = set[1].rate;
+          h_bb = set[2].hi_target - set[2].lo_target;
+        }
+        if (i == 4) {
+          if (set[0].style == TRATE) arate = set[0].rate;
+          h_bb = set[2].hi_target - set[2].lo_target;
+        }
+        if (i == 5) {
+          if (set[0].style == TRATE) arate = set[0].rate;
+          h_bb = set[1].hi_target - set[1].lo_target;
+        }
+        h_rate[i] = set[i].rate * h_bb + arate * set[i].tilt_target;
+      }
+    }
+    // TODO: use nearly_equal for check on set[5].rate?
+    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
+      h_rate[4] += set[5].rate*set[3].tilt_target;
   }
+
 
   // if any tilt ratios exceed 0.5, set flip = 1 and compute new tilt values
   // do not flip in x or y if non-periodic (can tilt but not flip)
@@ -1043,8 +1079,8 @@ void FixDeform::update_domain()
   // if xz tilt exceeded, adjust C vector by one A vector
   // if xy tilt exceeded, adjust B vector by one A vector
   // check yz first since it may change xz, then xz check comes after
-  // if end_flag = 1, flip is performed on current timestep, before reneighboring in pre_exchange()
-  // if end_flag = 0, flip is performed on next timestep
+  // if end_flag = 1, flip is performed on next timestep, before reneighboring in pre_exchange()
+  // if end_flag = 0, flip is performed on current timestep
 
   if (triclinic && flipflag) {
     double xprd = set[0].hi_target - set[0].lo_target;
@@ -1107,41 +1143,6 @@ void FixDeform::update_domain()
     }
   }
 
-  // for styles with h_rate dependence on xy/xz/yz, need to set h_rate after
-  //  box flips so that the correct streaming velocity can be recovered by
-  //  fix nvt/sllod and compute temp/deform
-  if (triclinic) {
-    double *h = domain->h;
-
-    for (int i = 3; i < 6; i++) {
-      if (set[i].style == TRATE) {
-        h_rate[i] = set[i].rate * domain->h[i];
-      } else if (set[i].style == ERATE) {
-        // solve ODE for a,b,c box vectors accounting for elongation caused by TRATE
-        // this is needed for correct velocity remapping and correct calculation of
-        //  the velocity gradient tensor from (h_rate * h_inv) under mixed flow.
-        // TODO: do other elongation styles need to be accounted for where possible?
-        double h_bb, arate = 0.0;
-        if (i == 3) {
-          if (set[1].style == TRATE) arate = set[1].rate;
-          h_bb = set[2].hi_target - set[2].lo_target;
-        }
-        if (i == 4) {
-          if (set[0].style == TRATE) arate = set[0].rate;
-          h_bb = set[2].hi_target - set[2].lo_target;
-        }
-        if (i == 5) {
-          if (set[0].style == TRATE) arate = set[0].rate;
-          h_bb = set[1].hi_target - set[1].lo_target;
-        }
-        h_rate[i] = set[i].rate * h_bb + arate * set[i].tilt_target;
-      }
-    }
-    // TODO: use nearly_equal for check on set[5].rate?
-    if (set[5].style == ERATE && set[5].rate != 0.0 && set[4].style == ERATE)
-      h_rate[4] += set[5].rate*set[3].tilt_target;
-  }
-
   // convert atoms and rigid bodies to lamda coords
 
   if (remapflag == Domain::X_REMAP) {
@@ -1195,7 +1196,7 @@ void FixDeform::update_domain()
 ------------------------------------------------------------------------- */
 double FixDeform::calc_xz_correction(double delt) {
   // solve ODE for xy component of xz tilt factor
-  // TODO: use nearly_equal when checking for 0?
+  // TODO: use nearly_equal when checking for equality?
   double g_xy = set[5].rate;
   double g_yz = set[3].rate;
   double h_yz0 = set[3].tilt_start;
