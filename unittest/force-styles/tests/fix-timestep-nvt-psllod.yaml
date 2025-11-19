@@ -10,8 +10,6 @@ pre_commands: ! ""
 post_commands: ! |
   change_box all triclinic
   variable gamma index 0.05
-  variable vx atom y*${gamma}
-  if $(step)==0 then "velocity all set v_vx NULL NULL sum yes"
   fix all all deform 2 xy erate ${gamma} remap v
   fix test all nvt/sllod temp 50.0 ${t_target} 1.0 psllod yes peculiar no
 input_file: in.fourmol
