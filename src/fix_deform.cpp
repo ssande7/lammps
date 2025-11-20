@@ -1255,7 +1255,8 @@ double FixDeform::calc_xz_correction(double delt) {
         // e_xx = 0, e_yy != 0, e_zz != 0, e_yy != e_zz
         // (shear + y,z extension - possibly vol. preserving)
         double yfac = (exp(e_yy * delt) - 1.0) / e_yy;
-        return g_xy * g_yz * h_zz0 / (e_zz - e_yy) * ((exp(e_zz) - 1.0) / e_zz - yfac)
+        double zfac = (exp(e_zz * delt) - 1.0) / e_zz;
+        return g_xy * g_yz * h_zz0 / (e_zz - e_yy) * (zfac - yfac)
                + g_xy*h_yz0*yfac;
       }
     } else if (e_zz == 0.0) {
